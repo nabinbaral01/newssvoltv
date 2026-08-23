@@ -1,6 +1,6 @@
 'use client';
 
-import { ExternalLink, LogOut, Moon, Sun, User } from 'lucide-react';
+import { ExternalLink, LogOut, Moon, Sun, User, UserRound } from 'lucide-react';
 import { signOut } from 'next-auth/react';
 import Link from 'next/link';
 import { useTheme } from 'next-themes';
@@ -59,8 +59,13 @@ export function AdminUserMenu({
         </DropdownMenuTrigger>
         <DropdownMenuContent>
           <DropdownMenuItem asChild>
+            <Link href="/admin/profile">
+              <UserRound className="size-4" /> Your profile
+            </Link>
+          </DropdownMenuItem>
+          <DropdownMenuItem asChild>
             <Link href="/account">
-              <User className="size-4" /> Your account
+              <User className="size-4" /> Account &amp; privacy
             </Link>
           </DropdownMenuItem>
           <DropdownMenuItem asChild>

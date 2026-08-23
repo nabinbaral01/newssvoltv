@@ -69,6 +69,14 @@ model User {
   bio            String?
   slug           String    @unique
   socialLinks    Json?
+
+  /// The byline job title — "Senior Film Critic", not "ADMIN". `role` is a
+  /// permission, and publishing it as a masthead credit would be both ugly and
+  /// a small disclosure of who can do what. Falls back to a role label.
+  title      String?
+  /// Masthead position. Editorial hierarchy is not alphabetical, and ordering
+  /// by post count would rank people by output.
+  staffOrder Int     @default(0)
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
   lastLoginAt    DateTime?
@@ -91,6 +99,7 @@ model User {
 
   @@index([role])
   @@index([createdAt])
+  @@index([staffOrder])
 }
 
 /// Single-use password reset.

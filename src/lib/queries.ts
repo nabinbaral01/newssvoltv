@@ -1,10 +1,11 @@
-import { Prisma, PostStatus } from '@prisma/client';
+import { Prisma, PostStatus, Role } from '@prisma/client';
 import { unstable_cache } from 'next/cache';
 
 import { prisma } from './prisma';
 
 export const POSTS_TAG = 'posts';
 export const NAV_TAG = 'navigation';
+export const STAFF_TAG = 'staff';
 
 /**
  * `unstable_cache` round-trips its payload through JSON, which turns every
@@ -454,12 +455,72 @@ export async function getAuthorBySlug(slug: string) {
       slug: true,
       image: true,
       bio: true,
+      title: true,
       socialLinks: true,
       role: true,
+      createdAt: true,
       _count: { select: { posts: { where: publishedWhere() } } },
     },
   });
 }
+
+export type StaffMember = {
+  name: string;
+  slug: string;
+  image: string | null;
+  bio: string | null;
+  title: string | null;
+  role: Role;
+  publishedCount: number;
+};
+
+/**
+ * The masthead.
+ *
+ * Ordered by `staffOrder` first because an editorial hierarchy is a decision,
+ * not a computation — sorting by post count would put the most prolific writer
+ * above the editor-in-chief, and alphabetical says nothing at all. Ties fall
+ * back to role seniority, then to name.
+ *
+ * READERs are excluded: a signed-up commenter is not staff, and listing every
+ * registered account here would leak the size and shape of the user base.
+ */
+export const getStaffDirectory = cachedQuery(
+  async (): Promise<StaffMember[]> => {
+    const people = await prisma.user.findMany({
+      where: { role: { not: Role.READER } },
+      orderBy: [{ staffOrder: 'asc' }, { name: 'asc' }],
+      select: {
+        name: true,
+        slug: true,
+        image: true,
+        bio: true,
+        title: true,
+        role: true,
+        staffOrder: true,
+        _count: { select: { posts: { where: publishedWhere() } } },
+      },
+    });
+
+    const seniority: Record<string, number> = { ADMIN: 0, EDITOR: 1, AUTHOR: 2, READER: 3 };
+
+    return people
+      .map(({ _count, staffOrder, ...person }) => ({
+        ...person,
+        staffOrder,
+        publishedCount: _count.posts,
+      }))
+      .sort(
+        (a, b) =>
+          a.staffOrder - b.staffOrder ||
+          seniority[a.role] - seniority[b.role] ||
+          a.name.localeCompare(b.name),
+      )
+      .map(({ staffOrder: _drop, ...person }) => person);
+  },
+  ['staff-directory'],
+  { tags: [STAFF_TAG], revalidate: 600 },
+);
 
 export async function getTagBySlug(slug: string) {
   return prisma.tag.findUnique({ where: { slug }, select: { name: true, slug: true, useCount: true } });

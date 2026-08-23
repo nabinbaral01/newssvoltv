@@ -2,7 +2,7 @@
 
 import {
   BarChart3, ChevronLeft, FileText, Image as ImageIcon, LayoutDashboard, Mail,
-  MessageSquare, Settings, Tags, Users,
+  MessageSquare, Settings, Tags, UserRound, Users,
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -22,6 +22,9 @@ const NAV: { href: string; label: string; icon: React.ElementType; capability: C
   { href: '/admin/newsletter', label: 'Newsletter', icon: Mail, capability: 'newsletter.manage' },
   { href: '/admin/users', label: 'Users & roles', icon: Users, capability: 'users.manage' },
   { href: '/admin/settings', label: 'Settings', icon: Settings, capability: 'settings.manage' },
+  // Last, and available to every role that can reach the panel: an AUTHOR has
+  // a byline to maintain even though they can see almost nothing else here.
+  { href: '/admin/profile', label: 'Your profile', icon: UserRound, capability: 'admin.access' },
 ];
 
 const COLLAPSE_KEY = 'volt:admin-sidebar-collapsed';

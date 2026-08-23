@@ -1,7 +1,9 @@
 import type { Metadata } from 'next';
+import Link from 'next/link';
 import { notFound } from 'next/navigation';
 
 import { ArchiveView, Pagination } from '@/components/site/archive-view';
+import { bylineTitle, initials, socialLabel } from '@/lib/byline';
 import { getArchive, getAuthorBySlug } from '@/lib/queries';
 import { SITE_URL } from '@/lib/site';
 
@@ -38,7 +40,9 @@ export default async function AuthorPage({ params, searchParams }: Props) {
     '@context': 'https://schema.org',
     '@type': 'Person',
     name: author.name,
+    jobTitle: bylineTitle(author),
     description: author.bio ?? undefined,
+    image: author.image ? `${SITE_URL}${author.image}` : undefined,
     url: `${SITE_URL}/author/${author.slug}`,
     sameAs: Object.values(social),
   };
@@ -56,28 +60,41 @@ export default async function AuthorPage({ params, searchParams }: Props) {
             // eslint-disable-next-line @next/next/no-img-element
             <img src={author.image} alt="" className="size-full object-cover" />
           ) : (
-            author.name.slice(0, 1)
+            initials(author.name)
           )}
         </span>
         <div className="min-w-0 flex-1">
-          <p className="text-xs font-bold uppercase tracking-widest text-muted">
-            {author.role === 'ADMIN' ? 'Editor-in-chief' : author.role === 'EDITOR' ? 'Editor' : 'Writer'}
+          <p className="text-xs font-bold uppercase tracking-widest text-accent">
+            {bylineTitle(author)}
           </p>
           <h1 className="headline text-4xl uppercase sm:text-5xl">{author.name}</h1>
           {author.bio ? <p className="mt-2 max-w-2xl text-sm text-muted">{author.bio}</p> : null}
-          <div className="mt-2 flex flex-wrap gap-3 text-xs">
-            <span className="text-muted">{author._count.posts} published stories</span>
-            {Object.entries(social).map(([key, href]) => (
-              <a
-                key={key}
-                href={href}
-                target="_blank"
-                rel="noreferrer noopener me"
-                className="text-accent hover:underline"
-              >
-                {key}
-              </a>
-            ))}
+          <div className="mt-2 flex flex-wrap items-center gap-3 text-xs">
+            <span className="text-muted">
+              {author._count.posts} published {author._count.posts === 1 ? 'story' : 'stories'}
+            </span>
+            <Link href="/authors" className="text-muted underline underline-offset-2 hover:text-accent">
+              All writers
+            </Link>
+            {/* Labelled, and in its own landmark: the footer carries the
+                site's own social links, so "X" on this page has to be
+                distinguishable from "X" down there — for a screen reader as
+                much as for anyone reading the markup. */}
+            {Object.keys(social).length ? (
+              <nav aria-label={`${author.name} elsewhere`} className="flex flex-wrap gap-3">
+                {Object.entries(social).map(([key, href]) => (
+                  <a
+                    key={key}
+                    href={href}
+                    target="_blank"
+                    rel="noreferrer noopener me"
+                    className="text-accent hover:underline"
+                  >
+                    {socialLabel(key)}
+                  </a>
+                ))}
+              </nav>
+            ) : null}
           </div>
         </div>
       </header>

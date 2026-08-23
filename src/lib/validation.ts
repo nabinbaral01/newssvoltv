@@ -55,6 +55,69 @@ export const accountSchema = z.object({
     .transform((v) => (v === '' || v === undefined ? null : v)),
 });
 
+/**
+ * The staff-facing half of a profile: everything that appears on a byline.
+ *
+ * Separate from `accountSchema` on purpose. That one is a reader's private
+ * record — birth year, city, the demographics the dashboards sample from — and
+ * none of it belongs on a public author page. This one is the opposite: every
+ * field here is published, so it is edited from the admin panel and validated
+ * on its own terms.
+ */
+export const SOCIAL_PLATFORMS = [
+  { key: 'x', label: 'X / Twitter', placeholder: 'https://x.com/yourhandle' },
+  { key: 'bluesky', label: 'Bluesky', placeholder: 'https://bsky.app/profile/you' },
+  { key: 'instagram', label: 'Instagram', placeholder: 'https://instagram.com/you' },
+  { key: 'linkedin', label: 'LinkedIn', placeholder: 'https://linkedin.com/in/you' },
+  { key: 'website', label: 'Website', placeholder: 'https://yoursite.com' },
+] as const;
+
+const SOCIAL_KEYS = SOCIAL_PLATFORMS.map((p) => p.key) as unknown as [string, ...string[]];
+
+/** A profile link is rendered as an anchor, so `javascript:` must never pass. */
+const publicUrl = z
+  .string()
+  .trim()
+  .max(300)
+  .refine((value) => /^https?:\/\/.+/i.test(value), 'Links must start with http:// or https://');
+
+export const staffProfileSchema = z.object({
+  name: z.string().trim().min(2, 'A byline needs a name.').max(80),
+  title: z
+    .union([z.literal(''), z.string().trim().max(60)])
+    .optional()
+    .transform((v) => (v ? v : null)),
+  bio: z
+    .union([z.literal(''), z.string().trim().max(600)])
+    .optional()
+    .transform((v) => (v ? v : null)),
+  image: z
+    .union([z.literal(''), z.string().trim().max(500)])
+    .optional()
+    .transform((v) => (v ? v : null)),
+  // Empty values are dropped rather than stored as "", so the author page can
+  // simply iterate the object without filtering blanks back out.
+  socialLinks: z
+    .record(z.enum(SOCIAL_KEYS), z.union([z.literal(''), publicUrl]))
+    .default({})
+    .transform((links) =>
+      Object.fromEntries(Object.entries(links).filter(([, href]) => Boolean(href))),
+    ),
+});
+
+export type StaffProfileInput = z.input<typeof staffProfileSchema>;
+
+/** Fields only an admin may set on someone else — including themselves. */
+export const staffAdminFieldsSchema = z.object({
+  slug: z
+    .string()
+    .trim()
+    .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, 'Lowercase letters, numbers and hyphens only.')
+    .min(2)
+    .max(60),
+  staffOrder: z.coerce.number().int().min(0).max(999).default(0),
+});
+
 export const postSchema = z.object({
   title: z.string().trim().min(3, 'A headline is required.').max(200),
   slug: z
