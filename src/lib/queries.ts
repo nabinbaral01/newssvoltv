@@ -465,6 +465,63 @@ export async function getTagBySlug(slug: string) {
   return prisma.tag.findUnique({ where: { slug }, select: { name: true, slug: true, useCount: true } });
 }
 
+/**
+ * The 50 most recent posts, for the RSS feed.
+ *
+ * Cached and tagged rather than letting the route cache its whole response:
+ * publishing calls updateTag(POSTS_TAG), which reaches this immediately, while
+ * a cached response would keep serving a stale feed until its timer expired.
+ */
+export const getFeedPosts = cachedQuery(
+  async () =>
+    prisma.post.findMany({
+      where: publishedWhere(),
+      orderBy: byNewest,
+      take: 50,
+      select: {
+        title: true,
+        slug: true,
+        excerpt: true,
+        publishedAt: true,
+        coverImage: true,
+        category: { select: { name: true, slug: true } },
+        author: { select: { name: true } },
+        tags: { select: { name: true } },
+      },
+    }),
+  ['rss-feed'],
+  { tags: [POSTS_TAG], revalidate: 900 },
+);
+
+/** Everything the sitemap lists, on the same tag for the same reason. */
+export const getSitemapEntries = cachedQuery(
+  async () => {
+    const [posts, categories, contentTypes, tags, authors] = await Promise.all([
+      prisma.post.findMany({
+        where: publishedWhere(),
+        select: {
+          slug: true,
+          updatedAt: true,
+          publishedAt: true,
+          category: { select: { slug: true } },
+        },
+        orderBy: { publishedAt: 'desc' },
+        take: 40_000,
+      }),
+      prisma.category.findMany({ where: { isActive: true }, select: { slug: true } }),
+      prisma.contentType.findMany({ select: { slug: true } }),
+      prisma.tag.findMany({ where: { useCount: { gt: 0 } }, select: { slug: true } }),
+      prisma.user.findMany({
+        where: { posts: { some: { status: PostStatus.PUBLISHED, deletedAt: null } } },
+        select: { slug: true },
+      }),
+    ]);
+    return { posts, categories, contentTypes, tags, authors };
+  },
+  ['sitemap-entries'],
+  { tags: [POSTS_TAG], revalidate: 3600 },
+);
+
 export const getPopularTags = cachedQuery(
   async (take: number = 24) =>
     prisma.tag.findMany({

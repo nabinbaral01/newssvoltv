@@ -1,8 +1,18 @@
 import { buildSafe } from '@/lib/build-safe';
-import { prisma } from '@/lib/prisma';
+import { getFeedPosts } from '@/lib/queries';
 import { DEFAULT_SETTINGS, getSettings, SITE_URL } from '@/lib/site';
 
-export const revalidate = 900;
+/**
+ * Rendered per request; the query behind it is cached and tagged, so publishing
+ * reaches the feed immediately through updateTag(POSTS_TAG).
+ *
+ * Caching the *response* instead is what broke this in production. The route
+ * previously sent `Cache-Control: max-age=900`, which tells Vercel's CDN to
+ * hold the response for fifteen minutes regardless of what Next revalidates —
+ * so a feed generated while the database was still empty kept being served to
+ * every reader long after articles existed.
+ */
+export const dynamic = 'force-dynamic';
 
 function escapeXml(value: string): string {
   return value
@@ -14,30 +24,21 @@ function escapeXml(value: string): string {
 }
 
 export async function GET() {
-  const [settings, posts] = await buildSafe('rss feed', () => Promise.all([
-    getSettings(),
-    prisma.post.findMany({
-      where: { status: 'PUBLISHED', publishedAt: { lte: new Date() }, deletedAt: null },
-      orderBy: { publishedAt: 'desc' },
-      take: 50,
-      select: {
-        title: true,
-        slug: true,
-        excerpt: true,
-        publishedAt: true,
-        coverImage: true,
-        category: { select: { name: true, slug: true } },
-        author: { select: { name: true } },
-        tags: { select: { name: true } },
-      },
-    }),
-    ]),
+  const [settings, posts] = await buildSafe(
+    'rss feed',
+    () => Promise.all([getSettings(), getFeedPosts()]),
     [DEFAULT_SETTINGS, []] as never,
   );
 
   const items = posts
     .map((post) => {
       const url = `${SITE_URL}/${post.category.slug}/${post.slug}`;
+      const image = post.coverImage
+        ? post.coverImage.startsWith('http')
+          ? post.coverImage
+          : `${SITE_URL}${post.coverImage}`
+        : null;
+
       return `    <item>
       <title>${escapeXml(post.title)}</title>
       <link>${url}</link>
@@ -47,7 +48,7 @@ export async function GET() {
       <category>${escapeXml(post.category.name)}</category>
 ${post.tags.map((t) => `      <category>${escapeXml(t.name)}</category>`).join('\n')}
       <description>${escapeXml(post.excerpt ?? '')}</description>
-${post.coverImage ? `      <enclosure url="${SITE_URL}${post.coverImage}" type="image/svg+xml"/>` : ''}
+${image ? `      <enclosure url="${image}" type="image/jpeg"/>` : ''}
     </item>`;
     })
     .join('\n');
@@ -68,7 +69,9 @@ ${items}
   return new Response(xml, {
     headers: {
       'Content-Type': 'application/rss+xml; charset=utf-8',
-      'Cache-Control': 'public, max-age=900, stale-while-revalidate=3600',
+      // Short enough that a stale copy is measured in seconds, not minutes.
+      // Real freshness comes from the tagged query above.
+      'Cache-Control': 'public, max-age=0, s-maxage=60, stale-while-revalidate=300',
     },
   });
 }

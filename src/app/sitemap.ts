@@ -1,37 +1,24 @@
 import type { MetadataRoute } from 'next';
 
 import { buildSafe } from '@/lib/build-safe';
-import { prisma } from '@/lib/prisma';
+import { getSitemapEntries } from '@/lib/queries';
 import { SITE_URL } from '@/lib/site';
 
-export const revalidate = 3600;
+/**
+ * Same reasoning as the RSS feed: the response is generated per request and the
+ * data behind it is cached on the POSTS_TAG, so a newly published article is
+ * discoverable straight away rather than after the next revalidation window.
+ * A search engine crawling in the minutes after publication should find it.
+ */
+export const dynamic = 'force-dynamic';
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  // A sitemap missing its dynamic entries is far better than a failed deploy;
-  // the next revalidation picks them all up.
-  const [posts, categories, contentTypes, tags, authors] = await buildSafe(
+  // A sitemap missing its dynamic entries beats a failed deploy; the next
+  // request rebuilds it once the database is reachable again.
+  const { posts, categories, contentTypes, tags, authors } = await buildSafe(
     'sitemap',
-    () => Promise.all([
-    prisma.post.findMany({
-      where: { status: 'PUBLISHED', publishedAt: { lte: new Date() }, deletedAt: null },
-      select: {
-        slug: true,
-        updatedAt: true,
-        publishedAt: true,
-        category: { select: { slug: true } },
-      },
-      orderBy: { publishedAt: 'desc' },
-      take: 40_000,
-    }),
-    prisma.category.findMany({ where: { isActive: true }, select: { slug: true } }),
-    prisma.contentType.findMany({ select: { slug: true } }),
-    prisma.tag.findMany({ where: { useCount: { gt: 0 } }, select: { slug: true } }),
-    prisma.user.findMany({
-      where: { posts: { some: { status: 'PUBLISHED' } } },
-      select: { slug: true },
-    }),
-    ]),
-    [[], [], [], [], []] as never,
+    () => getSitemapEntries(),
+    { posts: [], categories: [], contentTypes: [], tags: [], authors: [] } as never,
   );
 
   const staticRoutes: MetadataRoute.Sitemap = [
