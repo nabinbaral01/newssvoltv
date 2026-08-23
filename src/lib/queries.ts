@@ -266,7 +266,19 @@ export const articleSelect = {
   contentTypeId: true,
   tags: { select: { name: true, slug: true }, orderBy: { name: 'asc' } },
   author: {
-    select: { id: true, name: true, slug: true, image: true, bio: true, socialLinks: true },
+    // `title` and `role` ride along so the byline can credit a position
+    // without a second query per article — the whole point of the byline is
+    // that a reader can see who wrote this and why they would know.
+    select: {
+      id: true,
+      name: true,
+      slug: true,
+      image: true,
+      bio: true,
+      title: true,
+      role: true,
+      socialLinks: true,
+    },
   },
 } satisfies Prisma.PostSelect;
 
@@ -501,6 +513,26 @@ export const getAuthorBeats = cachedQuery(
   },
   ['author-beats'],
   { tags: [POSTS_TAG], revalidate: 600 },
+);
+
+/**
+ * Public counters for the end-of-article author card.
+ *
+ * Cached and tagged rather than read per request, because the article page is
+ * ISR-cached and the card must not be the thing that drags it into rendering
+ * on every hit. Nothing here is viewer-specific for the same reason — a follow
+ * button would mean reading a session cookie on the busiest page on the site.
+ */
+export const getAuthorStats = cachedQuery(
+  async (authorId: string): Promise<{ published: number; followers: number }> => {
+    const [published, followers] = await Promise.all([
+      prisma.post.count({ where: { ...publishedWhere(), authorId } }),
+      prisma.follow.count({ where: { authorId } }),
+    ]);
+    return { published, followers };
+  },
+  ['author-stats'],
+  { tags: [POSTS_TAG, STAFF_TAG], revalidate: 600 },
 );
 
 /** Whether the signed-in reader already follows this writer. */

@@ -120,6 +120,50 @@ test.describe('following a writer', () => {
   });
 });
 
+test.describe('article byline', () => {
+  test('credits the position and closes with an author card', async ({ page }) => {
+    await signIn(page, 'editor');
+
+    // Publish something, so the assertion runs against a byline this test owns
+    // rather than whichever article happens to be first on the site.
+    const title = `Byline Check ${Date.now()}`;
+    await page.goto('/admin/posts/new');
+    await page.getByPlaceholder('Write the headline').fill(title);
+
+    // TipTap is a contenteditable canvas, not an input.
+    const canvas = page.locator('.ProseMirror');
+    await canvas.click();
+    await canvas.pressSequentially('Body copy for the byline test.');
+
+    await page.getByLabel('Category').selectOption({ label: 'Movies' });
+    await page.getByLabel('Content type').selectOption({ label: 'News' });
+    await page.getByLabel('Status').selectOption('PUBLISHED');
+    await page.getByRole('button', { name: 'Save' }).click();
+    await page.waitForURL(/\/admin\/posts\/[a-z0-9]+$/i, { timeout: 30_000 });
+
+    // Read the slug the server actually assigned rather than re-deriving it
+    // here — a duplicate headline gets a -2 suffix, and guessing would send
+    // this test to a 404 that looks like a byline bug.
+    const previewHref = await page
+      .getByRole('link', { name: /Preview/i })
+      .first()
+      .getAttribute('href');
+    const slug = previewHref?.match(/\/preview\/([^?]+)/)?.[1];
+    expect(slug, 'editor should expose the saved slug').toBeTruthy();
+
+    await page.goto(`/movies/${slug}`);
+    await expect(page.getByRole('heading', { level: 1, name: title })).toBeVisible();
+
+    // The position sits under the name — "Editor", never "EDITOR" the role.
+    await expect(page.getByText('Editor', { exact: true }).first()).toBeVisible();
+    await expect(page.getByText('EDITOR', { exact: true })).toHaveCount(0);
+
+    const card = page.getByRole('complementary', { name: /About E2E Editor/ });
+    await expect(card).toBeVisible();
+    await expect(card.getByRole('link', { name: /More from E2E Editor/ })).toBeVisible();
+  });
+});
+
 test.describe('author page', () => {
   test('beats come from published work, and readers have no page', async ({ page }) => {
     await page.goto('/author/e2e-editor');

@@ -6,6 +6,7 @@ import { notFound } from 'next/navigation';
 
 import { ArchiveView, Pagination } from '@/components/site/archive-view';
 import { ArticleBody } from '@/components/site/article-body';
+import { AuthorCard } from '@/components/site/author-card';
 import { Comments } from '@/components/site/comments';
 import { GridCard } from '@/components/site/post-card';
 import { ShareButtons } from '@/components/site/share-buttons';
@@ -19,6 +20,7 @@ import {
   getRelatedPosts,
 } from '@/lib/queries';
 import { SITE_URL } from '@/lib/site';
+import { bylineTitle, initials } from '@/lib/byline';
 import { compactNumber, formatDateTime, relativeTime } from '@/lib/utils';
 
 export const revalidate = 300;
@@ -312,7 +314,7 @@ export default async function CategorySegmentPage({ params, searchParams }: Prop
                   // eslint-disable-next-line @next/next/no-img-element
                   <img src={post.author.image} alt="" className="size-full object-cover" />
                 ) : (
-                  post.author.name.slice(0, 1)
+                  initials(post.author.name)
                 )}
               </span>
             </Link>
@@ -323,15 +325,18 @@ export default async function CategorySegmentPage({ params, searchParams }: Prop
                   {post.author.name}
                 </Link>
               </p>
+              {/* The position, not the role. A reader deciding whether to
+                  trust a review wants to know the writer covers this beat —
+                  "Senior Film Critic" answers that and "ADMIN" does not. */}
+              <p className="text-[11px] font-semibold uppercase tracking-widest text-accent">
+                {bylineTitle(post.author)}
+              </p>
               {post.publishedAt ? (
-                <p className="text-xs text-muted">
+                <p className="mt-0.5 text-xs text-muted">
                   Published <time dateTime={post.publishedAt.toISOString()}>{formatDateTime(post.publishedAt)}</time>
                   <span aria-hidden> · </span>
                   {relativeTime(post.publishedAt)}
                 </p>
-              ) : null}
-              {post.author.bio ? (
-                <p className="mt-1 text-xs leading-snug text-muted">{post.author.bio}</p>
               ) : null}
             </div>
             <div className="flex items-center gap-3 text-xs text-muted">
@@ -357,6 +362,8 @@ export default async function CategorySegmentPage({ params, searchParams }: Prop
           <div className="mt-8 border-t border-border pt-4">
             <ShareButtons url={url} title={post.title} />
           </div>
+
+          <AuthorCard author={post.author} />
 
           {post.tags.length ? (
             <div className="mt-6">
