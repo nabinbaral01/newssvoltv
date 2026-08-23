@@ -1,0 +1,25 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "_comment": [
+    "Rename this over vercel.json on a Pro plan.",
+    "",
+    "Hobby allows 2 cron jobs at a once-a-day frequency, so the shipped",
+    "vercel.json collapses all three jobs into one nightly run. The cost is",
+    "scheduled posts: they go live at the next nightly pass rather than within",
+    "five minutes. On Pro the jobs split back out and scheduling is punctual."
+  ],
+  "crons": [
+    {
+      "path": "/api/cron?job=publish",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron?job=rollup&days=3",
+      "schedule": "20 3 * * *"
+    },
+    {
+      "path": "/api/cron?job=retention",
+      "schedule": "40 4 * * 0"
+    }
+  ]
+}
