@@ -1,20 +1,74 @@
 import { Resend } from 'resend';
 
 /**
- * Transactional email.
+ * Transactional email, with three drivers tried in order of trustworthiness.
  *
- * With RESEND_API_KEY unset the message is printed to the server console
- * instead of sent, so password reset can be exercised end to end on a laptop
- * with no account and no network. `sendEmail` never throws: a mail outage must
- * not turn into a 500 on a form the user is staring at.
+ *   smtp     any SMTP server, including Gmail with an app password. Free, and
+ *            it sends to whoever you address it to.
+ *   resend   Resend's API. On the shared onboarding@resend.dev sender it will
+ *            only deliver to the account owner's own address — an anti-abuse
+ *            rule, not a paywall — so it is second.
+ *   console  neither configured: print the message and carry on, so the whole
+ *            flow can be exercised on a laptop with no account and no network.
+ *
+ * SMTP wins when both are configured, because "sends to anyone" beats "sends
+ * to one address" every time. `sendEmail` never throws: a mail outage must not
+ * turn into a 500 on a form someone is staring at.
  */
 
 const API_KEY = process.env.RESEND_API_KEY;
-const FROM = process.env.EMAIL_FROM ?? 'Volt V <onboarding@resend.dev>';
 
-export const EMAIL_ENABLED = Boolean(API_KEY);
+const SMTP_HOST = process.env.SMTP_HOST;
+const SMTP_USER = process.env.SMTP_USER;
+const SMTP_PASS = process.env.SMTP_PASS;
+const SMTP_PORT = Number(process.env.SMTP_PORT ?? 587);
+
+export const SMTP_CONFIGURED = Boolean(SMTP_HOST && SMTP_USER && SMTP_PASS);
+
+/**
+ * Gmail rejects a From that is not the authenticated mailbox, silently
+ * rewriting or bouncing depending on the account. So when SMTP is in use the
+ * envelope sender defaults to the account being authenticated with, and
+ * EMAIL_FROM only supplies the display name.
+ */
+const FROM = (() => {
+  const configured = process.env.EMAIL_FROM;
+  if (!SMTP_CONFIGURED) return configured ?? 'Volt V <onboarding@resend.dev>';
+
+  const name = configured?.match(/^([^<]+)</)?.[1]?.trim() ?? 'Volt V';
+  return `${name} <${SMTP_USER}>`;
+})();
+
+export const EMAIL_ENABLED = SMTP_CONFIGURED || Boolean(API_KEY);
+
+/** Which driver a message would actually go out on. For the admin screens. */
+export const EMAIL_DRIVER: 'smtp' | 'resend' | 'console' = SMTP_CONFIGURED
+  ? 'smtp'
+  : API_KEY
+    ? 'resend'
+    : 'console';
 
 const resend = API_KEY ? new Resend(API_KEY) : null;
+
+/**
+ * One transport for the process, not one per message. Nodemailer pools the
+ * connection, and building a fresh one for every password reset would mean a
+ * TLS handshake per email.
+ */
+let transport: import('nodemailer').Transporter | null = null;
+
+async function smtpTransport() {
+  if (transport) return transport;
+  const nodemailer = await import('nodemailer');
+  transport = nodemailer.createTransport({
+    host: SMTP_HOST,
+    port: SMTP_PORT,
+    // 465 is implicit TLS; 587 upgrades with STARTTLS after connecting.
+    secure: SMTP_PORT === 465,
+    auth: { user: SMTP_USER, pass: SMTP_PASS },
+  });
+  return transport;
+}
 
 export type SendResult = { ok: true; id?: string } | { ok: false; error: string };
 
@@ -29,12 +83,28 @@ export async function sendEmail({
   html: string;
   text: string;
 }): Promise<SendResult> {
+  if (SMTP_CONFIGURED) {
+    try {
+      const mailer = await smtpTransport();
+      const info = await mailer.sendMail({ from: FROM, to, subject, html, text });
+      return { ok: true, id: info.messageId };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'SMTP send failed';
+      console.error('[email] smtp send failed:', message);
+      // Deliberately no fall-through to Resend: that would quietly send from a
+      // different address than the one configured, and on the sandbox sender
+      // it would fail for a second, unrelated reason.
+      return { ok: false, error: message };
+    }
+  }
+
   if (!resend) {
     console.log(
       [
         '',
         '─'.repeat(72),
-        'EMAIL (not sent — RESEND_API_KEY is unset)',
+        'EMAIL (not sent — no mail driver configured)',
+        '  set SMTP_HOST/SMTP_USER/SMTP_PASS, or RESEND_API_KEY, to send for real',
         `  to:      ${to}`,
         `  subject: ${subject}`,
         '',

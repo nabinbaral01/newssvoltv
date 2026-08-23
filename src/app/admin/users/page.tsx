@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 
 import { UsersClient, type AuditRow, type UserRow } from './users-client';
 import { PageHeader } from '@/components/admin/page-header';
+import { EMAIL_DRIVER } from '@/lib/email';
 import { CAPABILITIES, requireCapability, type Capability } from '@/lib/permissions';
 import { prisma } from '@/lib/prisma';
 
@@ -66,7 +67,14 @@ export default async function UsersPage() {
         description={`${rows.length} staff accounts · ${readerCount.toLocaleString()} reader accounts`}
       />
 
-      <UsersClient users={rows} auditLog={audit} currentUserId={admin.id} />
+      <UsersClient
+        users={rows}
+        auditLog={audit}
+        currentUserId={admin.id}
+        emailDriver={EMAIL_DRIVER}
+        emailFrom={process.env.EMAIL_FROM ?? null}
+        smtpUser={process.env.SMTP_USER ?? null}
+      />
 
       <section className="mt-6 rounded-card border border-border bg-surface">
         <div className="border-b border-border p-4">

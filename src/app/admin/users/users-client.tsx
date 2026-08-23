@@ -146,14 +146,61 @@ function InviteForm({ onDone }: { onDone: () => void }) {
   );
 }
 
+/**
+ * Says out loud where invitations will actually land.
+ *
+ * Without it, "Invite" looks identical whether mail is configured, sandboxed
+ * to one address, or going nowhere at all — and the person finds out days
+ * later when a colleague says they never got anything.
+ */
+function MailStatus({
+  driver,
+  from,
+  smtpUser,
+}: {
+  driver: 'smtp' | 'resend' | 'console';
+  from: string | null;
+  smtpUser: string | null;
+}) {
+  if (driver === 'smtp') {
+    return (
+      <p className="flex items-center gap-1.5 text-xs text-muted">
+        <Send className="size-3.5 text-success" aria-hidden />
+        Invitations send from <span className="text-fg">{smtpUser}</span> to any address.
+      </p>
+    );
+  }
+
+  const sandboxed = !from || from.includes('resend.dev');
+
+  return (
+    <p className="flex items-start gap-1.5 text-xs text-muted">
+      <MailWarning className="mt-0.5 size-3.5 shrink-0 text-warning" aria-hidden />
+      <span>
+        {driver === 'console'
+          ? 'No mail provider is configured — invitations are printed to the server log, not sent. Copy the link instead.'
+          : sandboxed
+            ? "Sending from Resend's shared test address, which only delivers to the address that owns the Resend account. Invitations to anyone else will not arrive — copy the link instead."
+            : `Invitations send from ${from}.`}
+      </span>
+    </p>
+  );
+}
+
 export function UsersClient({
   users,
   auditLog,
   currentUserId,
+  emailDriver,
+  emailFrom,
+  smtpUser,
 }: {
   users: UserRow[];
   auditLog: AuditRow[];
   currentUserId: string;
+  emailDriver: 'smtp' | 'resend' | 'console';
+  emailFrom: string | null;
+  smtpUser: string | null;
 }) {
   const router = useRouter();
   const [inviting, setInviting] = React.useState(false);
@@ -201,6 +248,10 @@ export function UsersClient({
             </Dialog>
           }
         />
+
+        <div className="border-b border-border px-4 py-3">
+          <MailStatus driver={emailDriver} from={emailFrom} smtpUser={smtpUser} />
+        </div>
 
         {fallback ? (
           <div className="border-b border-border p-4">
