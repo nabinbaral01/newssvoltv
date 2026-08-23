@@ -91,6 +91,16 @@ export const staffProfileSchema = z.object({
     .union([z.literal(''), z.string().trim().max(600)])
     .optional()
     .transform((v) => (v ? v : null)),
+  // Three separate blocks, because the author page runs them as three columns
+  // and each renders only when it has something in it.
+  focus: z
+    .union([z.literal(''), z.string().trim().max(600)])
+    .optional()
+    .transform((v) => (v ? v : null)),
+  favourites: z
+    .union([z.literal(''), z.string().trim().max(600)])
+    .optional()
+    .transform((v) => (v ? v : null)),
   image: z
     .union([z.literal(''), z.string().trim().max(500)])
     .optional()

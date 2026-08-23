@@ -58,6 +58,8 @@ export async function updateProfileAction(
     name: formData.get('name'),
     title: formData.get('title') ?? '',
     bio: formData.get('bio') ?? '',
+    focus: formData.get('focus') ?? '',
+    favourites: formData.get('favourites') ?? '',
     image: formData.get('image') ?? '',
     socialLinks,
   });
@@ -109,6 +111,8 @@ export async function updateProfileAction(
       name: data.name,
       title: data.title,
       bio: data.bio,
+      focus: data.focus,
+      favourites: data.favourites,
       image: data.image,
       socialLinks: data.socialLinks,
       ...(slug ? { slug } : {}),

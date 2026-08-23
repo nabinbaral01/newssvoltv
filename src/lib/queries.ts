@@ -455,13 +455,87 @@ export async function getAuthorBySlug(slug: string) {
       slug: true,
       image: true,
       bio: true,
+      focus: true,
+      favourites: true,
       title: true,
       socialLinks: true,
       role: true,
       createdAt: true,
-      _count: { select: { posts: { where: publishedWhere() } } },
+      _count: { select: { posts: { where: publishedWhere() }, followers: true } },
     },
   });
+}
+
+export type AuthorBeat = { name: string; slug: string; colour: string; count: number };
+
+/**
+ * What a writer actually covers, counted from their published work.
+ *
+ * Derived rather than typed in, because a hand-written "expertise" list is
+ * wrong the moment someone changes beat and nobody remembers to update it.
+ * This cannot drift: it is the byline history.
+ */
+export const getAuthorBeats = cachedQuery(
+  async (authorId: string): Promise<AuthorBeat[]> => {
+    const grouped = await prisma.post.groupBy({
+      by: ['categoryId'],
+      where: { ...publishedWhere(), authorId },
+      _count: { _all: true },
+      orderBy: { _count: { categoryId: 'desc' } },
+      take: 4,
+    });
+    if (!grouped.length) return [];
+
+    const categories = await prisma.category.findMany({
+      where: { id: { in: grouped.map((g) => g.categoryId) } },
+      select: { id: true, name: true, slug: true, colour: true },
+    });
+    const byId = new Map(categories.map((c) => [c.id, c]));
+
+    return grouped.flatMap((group) => {
+      const category = byId.get(group.categoryId);
+      return category
+        ? [{ name: category.name, slug: category.slug, colour: category.colour, count: group._count._all }]
+        : [];
+    });
+  },
+  ['author-beats'],
+  { tags: [POSTS_TAG], revalidate: 600 },
+);
+
+/** Whether the signed-in reader already follows this writer. */
+export async function isFollowing(followerId: string, authorId: string): Promise<boolean> {
+  const row = await prisma.follow.findUnique({
+    where: { followerId_authorId: { followerId, authorId } },
+    select: { id: true },
+  });
+  return Boolean(row);
+}
+
+/** Writers a reader follows, with their most recent story. For /account. */
+export async function getFollowedAuthors(followerId: string) {
+  const follows = await prisma.follow.findMany({
+    where: { followerId },
+    orderBy: { createdAt: 'desc' },
+    select: {
+      author: {
+        select: {
+          name: true,
+          slug: true,
+          image: true,
+          title: true,
+          role: true,
+          posts: {
+            where: publishedWhere(),
+            orderBy: byNewest,
+            take: 1,
+            select: { title: true, slug: true, publishedAt: true, category: { select: { slug: true } } },
+          },
+        },
+      },
+    },
+  });
+  return follows.map((f) => f.author);
 }
 
 export type StaffMember = {

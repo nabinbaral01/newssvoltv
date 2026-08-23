@@ -77,9 +77,16 @@ model User {
   /// Masthead position. Editorial hierarchy is not alphabetical, and ordering
   /// by post count would rank people by output.
   staffOrder Int     @default(0)
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
-  lastLoginAt    DateTime?
+
+  /// The author page runs three separate prose blocks — who they are, what
+  /// they cover now, what they love. One `bio` column cannot hold that, and
+  /// packing them into one field with separators would make the editing form
+  /// lie about what it stores.
+  focus       String?
+  favourites  String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  lastLoginAt DateTime?
 
   // Optional, self-declared. The only trustworthy demographic source we hold.
   birthYear Int?
@@ -87,19 +94,39 @@ model User {
   country   String?
   city      String?
 
-  accounts      Account[]
-  resetTokens   PasswordResetToken[]
-  posts         Post[]         @relation("PostAuthor")
-  deletedPosts  Post[]         @relation("PostDeletedBy")
-  revisions PostRevision[]
-  comments  Comment[]
-  media     MediaAsset[]
-  auditLogs AuditLog[]
-  pageViews PageView[]
+  accounts     Account[]
+  resetTokens  PasswordResetToken[]
+  posts        Post[]               @relation("PostAuthor")
+  deletedPosts Post[]               @relation("PostDeletedBy")
+  revisions    PostRevision[]
+  comments     Comment[]
+  media        MediaAsset[]
+  auditLogs    AuditLog[]
+  pageViews    PageView[]
+  followers    Follow[]             @relation("AuthorFollowers")
+  following    Follow[]             @relation("ReaderFollowing")
 
   @@index([role])
   @@index([createdAt])
   @@index([staffOrder])
+}
+
+/// A reader following a writer.
+///
+/// The unique pair is the safety story: a double-click, a retried request or
+/// two open tabs all collapse into one row rather than inflating a count.
+model Follow {
+  id         String   @id @default(cuid())
+  followerId String
+  authorId   String
+  createdAt  DateTime @default(now())
+
+  follower User @relation("ReaderFollowing", fields: [followerId], references: [id], onDelete: Cascade)
+  author   User @relation("AuthorFollowers", fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@unique([followerId, authorId])
+  @@index([authorId])
+  @@index([followerId])
 }
 
 /// Single-use password reset.
@@ -325,12 +352,12 @@ model SiteSetting {
 }
 
 model AuditLog {
-  id       String  @id @default(cuid())
-  userId   String?
-  action   String
-  entity   String
-  entityId String?
-  diff     Json?
+  id        String   @id @default(cuid())
+  userId    String?
+  action    String
+  entity    String
+  entityId  String?
+  diff      Json?
   /// Salted hash only. Raw IPs are never persisted anywhere in this schema.
   ipHash    String?
   createdAt DateTime @default(now())

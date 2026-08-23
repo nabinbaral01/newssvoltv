@@ -1,13 +1,14 @@
 'use client';
 
 import type { Role } from '@prisma/client';
-import { ExternalLink, Loader2, Save, Trash2, Upload } from 'lucide-react';
+import { ExternalLink, Loader2, Save } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import * as React from 'react';
 import { toast } from 'sonner';
 
-import { removeAvatarAction, updateProfileAction, type ProfileState } from './actions';
+import { updateProfileAction, type ProfileState } from './actions';
+import { AvatarPicker } from '@/components/avatar-picker';
 import { Button } from '@/components/ui/button';
 import { Field, Input, Textarea } from '@/components/ui/field';
 import { Card, CardHeader } from '@/components/ui/surface';
@@ -20,6 +21,8 @@ export type ProfilePayload = {
   slug: string;
   title: string | null;
   bio: string | null;
+  focus: string | null;
+  favourites: string | null;
   image: string | null;
   role: Role;
   staffOrder: number;
@@ -45,9 +48,9 @@ export function ProfileClient({
   const [name, setName] = React.useState(profile.name);
   const [title, setTitle] = React.useState(profile.title ?? '');
   const [bio, setBio] = React.useState(profile.bio ?? '');
+  const [focus, setFocus] = React.useState(profile.focus ?? '');
+  const [favourites, setFavourites] = React.useState(profile.favourites ?? '');
   const [image, setImage] = React.useState(profile.image);
-  const [uploading, setUploading] = React.useState(false);
-  const fileInput = React.useRef<HTMLInputElement>(null);
 
   React.useEffect(() => {
     if (state.ok) {
@@ -59,36 +62,6 @@ export function ProfileClient({
   }, [state, router]);
 
   const errors = state.fieldErrors ?? {};
-
-  async function uploadAvatar(file: File) {
-    setUploading(true);
-    try {
-      const body = new FormData();
-      body.append('file', file);
-      body.append('altText', `Portrait of ${name}`);
-      const res = await fetch('/api/admin/media', { method: 'POST', body });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error ?? 'Upload failed.');
-      setImage(json.asset.url as string);
-      toast.success('Photo uploaded — remember to save.');
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Upload failed.');
-    } finally {
-      setUploading(false);
-      if (fileInput.current) fileInput.current.value = '';
-    }
-  }
-
-  async function clearAvatar() {
-    const result = await removeAvatarAction();
-    if (result.error) {
-      toast.error(result.error);
-      return;
-    }
-    setImage(null);
-    toast.success('Photo removed.');
-    router.refresh();
-  }
 
   const previewTitle = title.trim() || bylineTitle({ title: null, role: profile.role });
 
@@ -151,50 +124,53 @@ export function ProfileClient({
         <Card>
           <CardHeader
             title="Photo"
-            description="Square images work best. Anything else is cropped to a circle."
+            description="Square images work best — anything else is centre-cropped. Under 2MB."
           />
-          <div className="flex flex-wrap items-center gap-4 p-4">
-            <span className="grid size-20 shrink-0 place-items-center overflow-hidden rounded-full bg-elevated text-xl font-bold text-accent">
-              {image ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={image} alt="" className="size-full object-cover" />
-              ) : (
-                initials(name)
-              )}
-            </span>
+          <div className="p-4">
+            {/* Saves on selection rather than on submit: the same control the
+                reader account page uses, so there is one upload path to get
+                right instead of two. */}
+            <AvatarPicker name={name} image={image} onChange={setImage} />
+          </div>
+        </Card>
 
-            <div className="flex flex-wrap gap-2">
-              <input
-                ref={fileInput}
-                type="file"
-                accept="image/*"
-                className="sr-only"
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (file) void uploadAvatar(file);
-                }}
+        <Card>
+          <CardHeader
+            title="About you"
+            description="Three blocks on your author page. Each one is hidden while it is empty, so fill in as many as you want."
+          />
+          <div className="space-y-4 p-4">
+            <Field
+              label="Current focus"
+              htmlFor="focus"
+              error={errors.focus}
+              hint="What you are covering right now — a beat, a franchise, a season."
+            >
+              <Textarea
+                id="focus"
+                name="focus"
+                value={focus}
+                onChange={(e) => setFocus(e.target.value)}
+                maxLength={600}
+                rows={4}
               />
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={uploading}
-                onClick={() => fileInput.current?.click()}
-              >
-                {uploading ? (
-                  <Loader2 className="mr-1.5 size-4 animate-spin" />
-                ) : (
-                  <Upload className="mr-1.5 size-4" />
-                )}
-                {image ? 'Replace photo' : 'Upload photo'}
-              </Button>
-              {image ? (
-                <Button type="button" variant="ghost" size="sm" onClick={() => void clearAvatar()}>
-                  <Trash2 className="mr-1.5 size-4" />
-                  Remove
-                </Button>
-              ) : null}
-            </div>
+            </Field>
+
+            <Field
+              label="Recommends"
+              htmlFor="favourites"
+              error={errors.favourites}
+              hint="The films, shows or games you would put in front of a reader."
+            >
+              <Textarea
+                id="favourites"
+                name="favourites"
+                value={favourites}
+                onChange={(e) => setFavourites(e.target.value)}
+                maxLength={600}
+                rows={4}
+              />
+            </Field>
           </div>
         </Card>
 
@@ -302,7 +278,7 @@ export function ProfileClient({
           </div>
         </Card>
 
-        <Button type="submit" disabled={pending || uploading} className="w-full">
+        <Button type="submit" disabled={pending} className="w-full">
           {pending ? (
             <Loader2 className="mr-1.5 size-4 animate-spin" />
           ) : (
