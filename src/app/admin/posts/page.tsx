@@ -1,9 +1,10 @@
 import { Prisma } from '@prisma/client';
-import { PenLine } from 'lucide-react';
+import { PenLine, Trash2 } from 'lucide-react';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { PostsTable, type PostRow } from './posts-table';
+import { TRASH_RETENTION_DAYS } from '@/lib/trash';
 import { PageHeader } from '@/components/admin/page-header';
 import { Button } from '@/components/ui/button';
 import { can, requireCapability } from '@/lib/permissions';
@@ -18,7 +19,7 @@ const PER_PAGE = 25;
 type Props = {
   searchParams: Promise<{
     q?: string; status?: string; category?: string; contentType?: string;
-    author?: string; from?: string; to?: string; page?: string;
+    author?: string; from?: string; to?: string; page?: string; trash?: string;
   }>;
 };
 
@@ -27,7 +28,11 @@ export default async function AdminPostsPage({ searchParams }: Props) {
   const params = await searchParams;
   const page = Math.max(1, Number(params.page ?? 1) || 1);
 
+  const inTrash = params.trash === '1';
+
   const where: Prisma.PostWhereInput = {
+    // Deleted posts are hidden everywhere except the Trash view.
+    deletedAt: inTrash ? { not: null } : null,
     // Authors see only their own work; editors and admins see everything.
     ...(can(user.role, 'post.edit.any') ? {} : { authorId: user.id }),
     ...(params.q
@@ -53,16 +58,17 @@ export default async function AdminPostsPage({ searchParams }: Props) {
       : {}),
   };
 
-  const [posts, total, categories, contentTypes, authors, counts] = await Promise.all([
+  const [posts, total, categories, contentTypes, authors, counts, trashCount] = await Promise.all([
     prisma.post.findMany({
       where,
-      orderBy: [{ updatedAt: 'desc' }],
+      orderBy: inTrash ? [{ deletedAt: 'desc' }] : [{ updatedAt: 'desc' }],
       skip: (page - 1) * PER_PAGE,
       take: PER_PAGE,
       select: {
         id: true, title: true, slug: true, status: true, publishedAt: true,
         scheduledFor: true, viewCount: true, isFeatured: true, isTrending: true,
-        previewToken: true,
+        previewToken: true, deletedAt: true,
+        deletedBy: { select: { name: true } },
         author: { select: { name: true } },
         category: { select: { name: true, slug: true } },
         contentType: { select: { name: true } },
@@ -79,7 +85,8 @@ export default async function AdminPostsPage({ searchParams }: Props) {
           select: { id: true, name: true },
         })
       : Promise.resolve([{ id: user.id, name: user.name ?? 'You' }]),
-    prisma.post.groupBy({ by: ['status'], _count: { _all: true } }),
+    prisma.post.groupBy({ by: ['status'], where: { deletedAt: null }, _count: { _all: true } }),
+    prisma.post.count({ where: { deletedAt: { not: null } } }),
   ]);
 
   const rows: PostRow[] = posts.map((post) => ({
@@ -98,6 +105,8 @@ export default async function AdminPostsPage({ searchParams }: Props) {
     isFeatured: post.isFeatured,
     isTrending: post.isTrending,
     previewToken: post.previewToken,
+    deletedAt: post.deletedAt?.toISOString() ?? null,
+    deletedByName: post.deletedBy?.name ?? null,
   }));
 
   const pages = Math.max(1, Math.ceil(total / PER_PAGE));
@@ -116,20 +125,42 @@ export default async function AdminPostsPage({ searchParams }: Props) {
   return (
     <>
       <PageHeader
-        title="Posts"
+        title={inTrash ? 'Trash' : 'Posts'}
         description={
-          <>
-            {formatNumber(total)} matching · {countFor('PUBLISHED')} published ·{' '}
-            {countFor('DRAFT')} draft · {countFor('IN_REVIEW')} in review ·{' '}
-            {countFor('SCHEDULED')} scheduled
-          </>
+          inTrash ? (
+            <>
+              {formatNumber(total)} deleted post{total === 1 ? '' : 's'}, kept for
+              {' '}{TRASH_RETENTION_DAYS} days before they are removed for good.
+            </>
+          ) : (
+            <>
+              {formatNumber(total)} matching · {countFor('PUBLISHED')} published ·{' '}
+              {countFor('DRAFT')} draft · {countFor('IN_REVIEW')} in review ·{' '}
+              {countFor('SCHEDULED')} scheduled
+            </>
+          )
         }
         actions={
-          <Button asChild>
-            <Link href="/admin/posts/new">
-              <PenLine className="size-4" /> New post
-            </Link>
-          </Button>
+          inTrash ? (
+            <Button asChild variant="outline">
+              <Link href="/admin/posts">← Back to posts</Link>
+            </Button>
+          ) : (
+            <>
+              {trashCount > 0 ? (
+                <Button asChild variant="outline">
+                  <Link href="/admin/posts?trash=1">
+                    <Trash2 className="size-4" /> Trash ({trashCount})
+                  </Link>
+                </Button>
+              ) : null}
+              <Button asChild>
+                <Link href="/admin/posts/new">
+                  <PenLine className="size-4" /> New post
+                </Link>
+              </Button>
+            </>
+          )
         }
       />
 
@@ -150,6 +181,8 @@ export default async function AdminPostsPage({ searchParams }: Props) {
         canBulkEdit={can(user.role, 'post.edit.any')}
         canDelete={can(user.role, 'post.delete')}
         canPublish={can(user.role, 'post.publish')}
+        inTrash={inTrash}
+        isAdmin={user.role === 'ADMIN'}
       />
 
       {pages > 1 ? (

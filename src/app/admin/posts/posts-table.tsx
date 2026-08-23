@@ -1,6 +1,6 @@
 'use client';
 
-import { Loader2, MessageSquare, Trash2 } from 'lucide-react';
+import { Loader2, MessageSquare, Trash2, Undo2 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import * as React from 'react';
@@ -29,6 +29,8 @@ export type PostRow = {
   isFeatured: boolean;
   isTrending: boolean;
   previewToken: string;
+  deletedAt: string | null;
+  deletedByName: string | null;
 };
 
 type Option = { id: string; name: string };
@@ -42,6 +44,8 @@ export function PostsTable({
   canBulkEdit,
   canDelete,
   canPublish,
+  inTrash = false,
+  isAdmin = false,
 }: {
   posts: PostRow[];
   categories: Option[];
@@ -51,6 +55,8 @@ export function PostsTable({
   canBulkEdit: boolean;
   canDelete: boolean;
   canPublish: boolean;
+  inTrash?: boolean;
+  isAdmin?: boolean;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -87,17 +93,44 @@ export function PostsTable({
 
   const runBulk = async (action: BulkAction) => {
     if (!selected.size) return;
-    if (action === 'delete' && !window.confirm(`Delete ${selected.size} post(s)? This cannot be undone.`)) {
-      return;
+
+    // Deleting is reversible now, so the confirmation says so rather than
+    // warning about something that is not true.
+    if (action === 'delete') {
+      const ok = window.confirm(
+        `Move ${selected.size} post(s) to Trash?\n\nThey stay recoverable for 30 days.`,
+      );
+      if (!ok) return;
     }
+
+    // Purging is the one step with no way back, so a click is not enough.
+    if (action === 'purge') {
+      const typed = window.prompt(
+        `Permanently delete ${selected.size} post(s)?\n\n` +
+          'This cannot be undone — comments and revisions go with them.\n' +
+          'Type DELETE to confirm.',
+      );
+      if (typed !== 'DELETE') return;
+    }
+
     setBusy(true);
     const result = await bulkPostAction(action, [...selected]);
     setBusy(false);
+
     if (result.error) {
       toast.error(result.error);
       return;
     }
-    toast.success(`${result.affected} post(s) updated.`);
+
+    const verb =
+      action === 'delete'
+        ? 'moved to Trash'
+        : action === 'restore'
+          ? 'restored'
+          : action === 'purge'
+            ? 'permanently deleted'
+            : 'updated';
+    toast.success(`${result.affected} post(s) ${verb}.`);
     setSelected(new Set());
     router.refresh();
   };
@@ -176,27 +209,50 @@ export function PostsTable({
           className="flex flex-wrap items-center gap-2 rounded-card border border-accent/40 bg-accent/10 px-3 py-2 text-sm"
         >
           <span className="font-medium">{selected.size} selected</span>
-          {canPublish ? (
-            <Button size="sm" variant="secondary" onClick={() => runBulk('publish')} disabled={busy}>
-              Publish
-            </Button>
-          ) : null}
-          {canBulkEdit ? (
+
+          {/* Trash offers only the two operations that make sense there. */}
+          {inTrash ? (
             <>
-              <Button size="sm" variant="secondary" onClick={() => runBulk('draft')} disabled={busy}>
-                Back to draft
+              <Button size="sm" onClick={() => runBulk('restore')} disabled={busy}>
+                {busy ? <Loader2 className="size-3.5 animate-spin" aria-hidden /> : <Undo2 className="size-3.5" aria-hidden />}
+                Restore
               </Button>
-              <Button size="sm" variant="secondary" onClick={() => runBulk('archive')} disabled={busy}>
-                Archive
-              </Button>
+              {isAdmin ? (
+                <Button size="sm" variant="danger" onClick={() => runBulk('purge')} disabled={busy}>
+                  <Trash2 className="size-3.5" aria-hidden />
+                  Delete permanently
+                </Button>
+              ) : (
+                <span className="text-xs text-muted">
+                  Only an administrator can delete permanently.
+                </span>
+              )}
             </>
-          ) : null}
-          {canDelete ? (
-            <Button size="sm" variant="danger" onClick={() => runBulk('delete')} disabled={busy}>
-              {busy ? <Loader2 className="size-3.5 animate-spin" aria-hidden /> : <Trash2 className="size-3.5" aria-hidden />}
-              Delete
-            </Button>
-          ) : null}
+          ) : (
+            <>
+              {canPublish ? (
+                <Button size="sm" variant="secondary" onClick={() => runBulk('publish')} disabled={busy}>
+                  Publish
+                </Button>
+              ) : null}
+              {canBulkEdit ? (
+                <>
+                  <Button size="sm" variant="secondary" onClick={() => runBulk('draft')} disabled={busy}>
+                    Back to draft
+                  </Button>
+                  <Button size="sm" variant="secondary" onClick={() => runBulk('archive')} disabled={busy}>
+                    Archive
+                  </Button>
+                </>
+              ) : null}
+              {canDelete ? (
+                <Button size="sm" variant="danger" onClick={() => runBulk('delete')} disabled={busy}>
+                  {busy ? <Loader2 className="size-3.5 animate-spin" aria-hidden /> : <Trash2 className="size-3.5" aria-hidden />}
+                  Move to Trash
+                </Button>
+              ) : null}
+            </>
+          )}
           <button type="button" onClick={() => setSelected(new Set())} className="ml-auto text-xs text-muted hover:text-fg">
             Clear selection
           </button>
@@ -256,7 +312,9 @@ export function PostsTable({
                 </td>
                 <td className="p-3"><StatusPill status={post.status} /></td>
                 <td className="p-3 text-xs text-muted">
-                  {post.publishedAt
+                  {post.deletedAt
+                    ? `deleted ${formatDate(post.deletedAt)}${post.deletedByName ? ` by ${post.deletedByName}` : ''}`
+                    : post.publishedAt
                     ? formatDate(post.publishedAt)
                     : post.scheduledFor
                       ? `→ ${formatDate(post.scheduledFor)}`

@@ -16,7 +16,7 @@ export async function GET() {
   const [settings, posts] = await Promise.all([
     getSettings(),
     prisma.post.findMany({
-      where: { status: 'PUBLISHED', publishedAt: { lte: new Date() } },
+      where: { status: 'PUBLISHED', publishedAt: { lte: new Date() }, deletedAt: null },
       orderBy: { publishedAt: 'desc' },
       take: 50,
       select: {

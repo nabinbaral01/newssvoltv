@@ -80,7 +80,12 @@ export type PostCard = Prisma.PostGetPayload<{ select: typeof postCardSelect }>;
 export const publishedWhere = (): Prisma.PostWhereInput => ({
   status: PostStatus.PUBLISHED,
   publishedAt: { lte: new Date() },
+  // Soft-deleted posts stay in the table but must never reach a reader.
+  deletedAt: null,
 });
+
+/** Not deleted, whatever the status. For admin listings and counts. */
+export const liveWhere = (): Prisma.PostWhereInput => ({ deletedAt: null });
 
 const byNewest: Prisma.PostOrderByWithRelationInput[] = [
   { publishedAt: 'desc' },
@@ -284,7 +289,7 @@ export const getArticle = cachedQuery(
 /** Preview access for editors: any status, gated by the post's preview token. */
 export async function getArticleForPreview(slug: string, token: string) {
   return prisma.post.findFirst({
-    where: { slug, previewToken: token },
+    where: { slug, previewToken: token, deletedAt: null },
     select: articleSelect,
   });
 }
@@ -400,6 +405,7 @@ export async function searchPosts(q: string, page = 1, perPage = 20) {
     FROM "Post" p
     WHERE p."status" = 'PUBLISHED'
       AND p."publishedAt" <= NOW()
+      AND p."deletedAt" IS NULL
       AND to_tsvector('english',
             coalesce(p."title", '') || ' ' || coalesce(p."excerpt", '') || ' ' || coalesce(p."bodyText", '')
           ) @@ websearch_to_tsquery('english', ${term})
@@ -417,6 +423,7 @@ export async function searchPosts(q: string, page = 1, perPage = 20) {
     FROM "Post" p
     WHERE p."status" = 'PUBLISHED'
       AND p."publishedAt" <= NOW()
+      AND p."deletedAt" IS NULL
       AND to_tsvector('english',
             coalesce(p."title", '') || ' ' || coalesce(p."excerpt", '') || ' ' || coalesce(p."bodyText", '')
           ) @@ websearch_to_tsquery('english', ${term})

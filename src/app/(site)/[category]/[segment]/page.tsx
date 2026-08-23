@@ -54,7 +54,7 @@ async function resolveContentType(categorySlug: string, segment: string) {
 export async function generateStaticParams() {
   const [posts, categories, contentTypes] = await Promise.all([
     prisma.post.findMany({
-      where: { status: 'PUBLISHED', publishedAt: { lte: new Date() } },
+      where: { status: 'PUBLISHED', publishedAt: { lte: new Date() }, deletedAt: null },
       orderBy: { publishedAt: 'desc' },
       take: 200,
       select: { slug: true, category: { select: { slug: true } } },

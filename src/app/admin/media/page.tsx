@@ -35,6 +35,7 @@ export default async function MediaPage({ searchParams }: Props) {
   const usage = urls.length
     ? await prisma.post.findMany({
         where: {
+          deletedAt: null,
           OR: [
             { coverImage: { in: urls } },
             { ogImage: { in: urls } },

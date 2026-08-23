@@ -29,7 +29,7 @@ export async function POST(request: NextRequest) {
   }
 
   const post = await prisma.post.findFirst({
-    where: { id: parsed.data.postId, status: 'PUBLISHED' },
+    where: { id: parsed.data.postId, status: 'PUBLISHED', deletedAt: null },
     select: { id: true },
   });
   if (!post) return NextResponse.json({ error: 'Post not found.' }, { status: 404 });

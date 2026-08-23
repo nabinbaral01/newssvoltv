@@ -97,7 +97,7 @@ export async function POST(request: NextRequest) {
     const match = data.path.match(/^\/[a-z0-9-]+\/([a-z0-9-]+)\/?$/);
     if (match) {
       const post = await prisma.post.findUnique({
-        where: { slug: match[1] },
+        where: { slug: match[1], deletedAt: null },
         select: { id: true },
       });
       postId = post?.id ?? null;

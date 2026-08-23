@@ -4,6 +4,7 @@ import { revalidatePath, revalidateTag } from 'next/cache';
 
 import { prisma } from '@/lib/prisma';
 import { NAV_TAG, POSTS_TAG } from '@/lib/queries';
+import { purgeExpiredTrash } from '@/app/admin/posts/actions';
 import { pruneResetTokens } from '@/lib/password-reset';
 import { pruneRawEvents, rebuildRollups } from '../../../../scripts/rollup.mts';
 
@@ -34,7 +35,7 @@ function authorised(request: NextRequest): boolean {
 /** Releases scheduled posts. Idempotent: re-running publishes nothing twice. */
 async function publishScheduled() {
   const due = await prisma.post.findMany({
-    where: { status: PostStatus.SCHEDULED, scheduledFor: { lte: new Date() } },
+    where: { status: PostStatus.SCHEDULED, scheduledFor: { lte: new Date() }, deletedAt: null },
     select: { id: true, slug: true, scheduledFor: true, category: { select: { slug: true } } },
   });
 
@@ -98,6 +99,8 @@ export async function GET(request: NextRequest) {
       results.retention = {
         ...(await pruneRawEvents(prisma, 14)),
         resetTokens: await pruneResetTokens(),
+        // Posts sitting in Trash past the retention window.
+        purgedPosts: await purgeExpiredTrash(),
       };
     }
   } catch (error) {

@@ -82,6 +82,7 @@ model User {
   accounts      Account[]
   resetTokens   PasswordResetToken[]
   posts         Post[]         @relation("PostAuthor")
+  deletedPosts  Post[]         @relation("PostDeletedBy")
   revisions PostRevision[]
   comments  Comment[]
   media     MediaAsset[]
@@ -211,6 +212,15 @@ model Post {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  /// Soft delete. A deleted post keeps its row, its comments and its analytics
+  /// until the retention job purges it — because "delete 25 posts" behind one
+  /// confirm dialog is a mis-click, not a decision, and there has to be a way
+  /// back. Every public query filters on this being null.
+  deletedAt   DateTime?
+  deletedById String?
+
+  deletedBy User? @relation("PostDeletedBy", fields: [deletedById], references: [id], onDelete: SetNull)
+
   category    Category       @relation(fields: [categoryId], references: [id])
   contentType ContentType    @relation(fields: [contentTypeId], references: [id])
   author      User           @relation("PostAuthor", fields: [authorId], references: [id])
@@ -228,6 +238,8 @@ model Post {
   @@index([isEditorPick, status])
   @@index([scheduledFor])
   @@index([viewCount])
+  // Every public and admin listing filters on deletedAt, so it leads.
+  @@index([deletedAt, status, publishedAt])
 }
 
 model PostRevision {
