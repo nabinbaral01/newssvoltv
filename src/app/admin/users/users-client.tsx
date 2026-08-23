@@ -1,12 +1,13 @@
 'use client';
 
-import { KeyRound, Loader2, Trash2, UserPlus } from 'lucide-react';
+import { Check, Copy, KeyRound, Loader2, MailWarning, Send, Trash2, UserPlus } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import * as React from 'react';
 import { toast } from 'sonner';
 
 import {
-  changeRoleAction, deleteUserAction, inviteUserAction, resetPasswordAction, type UserState,
+  changeRoleAction, deleteUserAction, inviteUserAction, resendInviteAction, resetPasswordAction,
+  type UserState,
 } from './actions';
 import { Button } from '@/components/ui/button';
 import { Field, Input, Select, Textarea } from '@/components/ui/field';
@@ -24,6 +25,8 @@ export type UserRow = {
   lastLoginAt: string | null;
   postCount: number;
   commentCount: number;
+  /** No password set yet — invited, but has never signed in. */
+  pendingInvite: boolean;
 };
 
 export type AuditRow = {
@@ -41,6 +44,51 @@ const ROLE_NOTES: Record<string, string> = {
   READER: 'No admin access at all',
 };
 
+/**
+ * Shown when the email could not be delivered.
+ *
+ * Not decoration: on a sandbox sender every address but the account owner's is
+ * refused, so without a copyable link the invited person hears nothing at all
+ * and the admin has no way to find out why.
+ */
+function LinkFallback({ link, label }: { link: string; label: string }) {
+  const [copied, setCopied] = React.useState(false);
+
+  return (
+    <div className="rounded-card border border-warning/50 bg-warning/10 p-3">
+      <p className="flex items-center gap-1.5 text-xs font-semibold">
+        <MailWarning className="size-3.5 text-warning" aria-hidden />
+        {label}
+      </p>
+      <div className="mt-2 flex gap-2">
+        <input
+          readOnly
+          value={link}
+          onFocus={(e) => e.currentTarget.select()}
+          className="min-w-0 flex-1 rounded-md border border-border bg-elevated px-2 py-1 font-mono text-[11px]"
+          aria-label="Set-password link"
+        />
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          onClick={async () => {
+            await navigator.clipboard.writeText(link);
+            setCopied(true);
+            setTimeout(() => setCopied(false), 2000);
+          }}
+        >
+          {copied ? <Check className="size-3.5" aria-hidden /> : <Copy className="size-3.5" aria-hidden />}
+          {copied ? 'Copied' : 'Copy'}
+        </Button>
+      </div>
+      <p className="mt-2 text-[11px] leading-snug text-muted">
+        Send this over a channel you trust. It works once and expires.
+      </p>
+    </div>
+  );
+}
+
 function InviteForm({ onDone }: { onDone: () => void }) {
   const router = useRouter();
   const [state, formAction, pending] = React.useActionState<UserState, FormData>(
@@ -50,8 +98,13 @@ function InviteForm({ onDone }: { onDone: () => void }) {
 
   React.useEffect(() => {
     if (state.ok && state.message) {
-      toast.success(state.message, { duration: 20_000 });
-      onDone();
+      if (state.emailSent) {
+        toast.success(state.message);
+        onDone();
+      } else {
+        // Closing the dialog here would throw the only copy of the link away.
+        toast.warning(state.message, { duration: 10_000 });
+      }
       router.refresh();
     } else if (state.error) {
       toast.error(state.error);
@@ -78,13 +131,17 @@ function InviteForm({ onDone }: { onDone: () => void }) {
         <Textarea id="invite-bio" name="bio" rows={2} maxLength={400} />
       </Field>
       <p className="text-xs text-muted">
-        The account is created immediately with a temporary password, shown once after you submit.
-        Wire an email provider in <code>inviteUserAction</code> to send it automatically.
+        They get an email with a link to choose their own password. The account cannot be signed
+        into until they do, so an invitation nobody accepts leaves nothing usable behind.
       </p>
       <Button type="submit" className="w-full" disabled={pending}>
         {pending ? <Loader2 className="size-4 animate-spin" aria-hidden /> : null}
-        Create account
+        Send invitation
       </Button>
+
+      {state.link && !state.emailSent ? (
+        <LinkFallback link={state.link} label="The invitation email was not delivered" />
+      ) : null}
     </form>
   );
 }
@@ -101,16 +158,28 @@ export function UsersClient({
   const router = useRouter();
   const [inviting, setInviting] = React.useState(false);
   const [busy, setBusy] = React.useState<string | null>(null);
+  const [fallback, setFallback] = React.useState<{ link: string; label: string } | null>(null);
 
   const act = async (id: string, fn: () => Promise<UserState>) => {
     setBusy(id);
     const result = await fn();
     setBusy(null);
-    if (result.error) toast.error(result.error);
-    else {
-      toast.success(result.message ?? 'Done.', { duration: result.message?.includes('password') ? 20_000 : 4000 });
-      router.refresh();
+
+    if (result.error) {
+      toast.error(result.error);
+      return;
     }
+
+    if (result.link && !result.emailSent) {
+      // Undeliverable: keep the link on screen rather than in a toast that
+      // vanishes before it can be copied.
+      setFallback({ link: result.link, label: result.message ?? 'Email not delivered' });
+      toast.warning(result.message ?? 'Email not delivered.');
+    } else {
+      setFallback(null);
+      toast.success(result.message ?? 'Done.');
+    }
+    router.refresh();
   };
 
   return (
@@ -132,6 +201,12 @@ export function UsersClient({
             </Dialog>
           }
         />
+
+        {fallback ? (
+          <div className="border-b border-border p-4">
+            <LinkFallback link={fallback.link} label={fallback.label} />
+          </div>
+        ) : null}
 
         <div className="overflow-x-auto">
           <table className="w-full min-w-[46rem] text-sm">
@@ -162,6 +237,9 @@ export function UsersClient({
                         <p className="truncate font-medium">
                           {user.name}
                           {user.id === currentUserId ? <Badge className="ml-2">you</Badge> : null}
+                          {user.pendingInvite ? (
+                            <Badge tone="warning" className="ml-2">invited</Badge>
+                          ) : null}
                         </p>
                         <p className="truncate text-xs text-muted">{user.email}</p>
                       </div>
@@ -188,11 +266,27 @@ export function UsersClient({
                   <td className="p-3 text-right tabular-nums">{user.postCount}</td>
                   <td className="p-3 text-right tabular-nums text-muted">{user.commentCount}</td>
                   <td className="p-3 text-xs text-muted">
-                    {user.lastLoginAt ? relativeTime(user.lastLoginAt) : 'never'}
+                    {user.lastLoginAt
+                      ? relativeTime(user.lastLoginAt)
+                      : user.pendingInvite
+                        ? 'not accepted yet'
+                        : 'never'}
                     <span className="block">joined {formatDate(user.createdAt)}</span>
                   </td>
                   <td className="p-3">
                     <div className="flex justify-end gap-1">
+                      {user.pendingInvite ? (
+                        <button
+                          type="button"
+                          disabled={busy === user.id}
+                          onClick={() => act(user.id, () => resendInviteAction(user.id))}
+                          aria-label={`Resend invitation to ${user.name}`}
+                          title="Resend invitation"
+                          className="rounded border border-border p-1.5 text-muted hover:text-accent disabled:opacity-30"
+                        >
+                          <Send className="size-3.5" />
+                        </button>
+                      ) : null}
                       <button
                         type="button"
                         onClick={() => act(user.id, () => resetPasswordAction(user.id))}

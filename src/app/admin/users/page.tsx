@@ -19,7 +19,7 @@ export default async function UsersPage() {
       orderBy: [{ role: 'asc' }, { name: 'asc' }],
       select: {
         id: true, name: true, email: true, role: true, image: true,
-        createdAt: true, lastLoginAt: true,
+        createdAt: true, lastLoginAt: true, hashedPassword: true,
         _count: { select: { posts: true, comments: true } },
       },
     }),
@@ -42,6 +42,9 @@ export default async function UsersPage() {
     image: user.image,
     createdAt: user.createdAt.toISOString(),
     lastLoginAt: user.lastLoginAt?.toISOString() ?? null,
+    // An invited account has no password until the person sets one, so this
+    // is the honest way to say "invited, has not joined yet".
+    pendingInvite: user.hashedPassword === null,
     postCount: user._count.posts,
     commentCount: user._count.comments,
   }));

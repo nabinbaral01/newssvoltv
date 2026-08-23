@@ -161,6 +161,59 @@ export function signInEmail(
   return { subject, html, text };
 }
 
+
+/**
+ * The invitation.
+ *
+ * Deliberately carries a link, not a password. Emailing a temporary password
+ * puts a working credential in an inbox forever, in plaintext, with no expiry
+ * and no way to tell whether it was ever used — and people reuse whatever they
+ * are given. A single-use link expires, dies the moment the password is set,
+ * and lets the person choose something only they know.
+ */
+export function inviteEmail(
+  name: string,
+  invitedBy: string,
+  roleLabel: string,
+  url: string,
+  days: number,
+) {
+  const subject = `${invitedBy} invited you to write for Volt V`;
+
+  const html = layout(
+    'You have been invited to Volt V',
+    `<p style="margin:0 0 20px;font-size:15px;line-height:1.6;color:#d4d4d8;">
+       Hi ${escapeHtml(name)}, ${escapeHtml(invitedBy)} has set up an account for you on Volt V
+       as ${escapeHtml(roleLabel)}.
+     </p>
+     <p style="margin:0 0 20px;font-size:15px;line-height:1.6;color:#d4d4d8;">
+       Choose a password to get in. This link works once and expires in ${days} days.
+     </p>
+     <a href="${url}" style="display:inline-block;padding:12px 22px;background:#00e88f;color:#141414;font-weight:600;font-size:15px;text-decoration:none;border-radius:6px;">
+       Set your password
+     </a>
+     <p style="margin:24px 0 0;font-size:13px;line-height:1.6;color:#a1a1aa;">
+       If the button does not work, paste this into your browser:<br>
+       <span style="color:#00e88f;word-break:break-all;">${url}</span>
+     </p>`,
+    'If you were not expecting this, you can ignore it — the account cannot be used until a password is set.',
+  );
+
+  const text = [
+    `Hi ${name},`,
+    '',
+    `${invitedBy} has set up an account for you on Volt V as ${roleLabel}.`,
+    `Choose a password to get in. This link works once and expires in ${days} days:`,
+    '',
+    url,
+    '',
+    'If you were not expecting this, you can ignore it — the account cannot be',
+    'used until a password is set.',
+  ].join('\n');
+
+  return { subject, html, text };
+}
+
 export function passwordChangedEmail(name: string) {
   const subject = 'Your Volt V password was changed';
 

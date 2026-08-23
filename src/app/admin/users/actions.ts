@@ -1,18 +1,41 @@
 'use server';
 
 import { Role } from '@prisma/client';
-import bcrypt from 'bcryptjs';
-import crypto from 'node:crypto';
 import { revalidatePath } from 'next/cache';
 import { headers } from 'next/headers';
 import { z } from 'zod';
 
 import { clientIp, hash } from '@/lib/analytics';
+import { EMAIL_ENABLED, inviteEmail, passwordResetEmail, sendEmail } from '@/lib/email';
+import { INVITE_TTL_MINUTES, issueResetToken, TOKEN_TTL_MINUTES } from '@/lib/password-reset';
 import { assertCapability } from '@/lib/permissions';
 import { prisma } from '@/lib/prisma';
+import { SITE_URL } from '@/lib/site';
 import { slugify, uniqueSlug } from '@/lib/slug';
 
-export type UserState = { ok?: boolean; error?: string; message?: string; fieldErrors?: Record<string, string> };
+export type UserState = {
+  ok?: boolean;
+  error?: string;
+  message?: string;
+  fieldErrors?: Record<string, string>;
+  /**
+   * The set-password link, returned so it can be copied by hand.
+   *
+   * Not a fallback for tidiness: on a sandbox sender an invitation to any
+   * address but the account owner's is silently refused, and without this the
+   * new colleague would simply never hear anything. The admin already created
+   * the account, so seeing the link grants nothing they did not already have.
+   */
+  link?: string;
+  emailSent?: boolean;
+};
+
+const ROLE_LABELS: Record<Role, string> = {
+  ADMIN: 'an administrator',
+  EDITOR: 'an editor',
+  AUTHOR: 'a writer',
+  READER: 'a reader',
+};
 
 const inviteSchema = z.object({
   name: z.string().trim().min(2).max(80),
@@ -36,8 +59,13 @@ async function audit(userId: string, action: string, entityId: string, diff?: ob
 }
 
 /**
- * Invites create the account with a random password and return a one-time
- * link. Wiring an ESP in here is the only step to make it a real email.
+ * Creates the account and emails an invitation.
+ *
+ * The account is created with no password at all rather than a random one.
+ * `authorize` refuses any account whose hashedPassword is null, so an invite
+ * that is never accepted is an account nobody can sign in to — which is the
+ * correct state for "invited, has not joined". A random password would be a
+ * live credential sitting in the database for an account nobody is watching.
  */
 export async function inviteUserAction(_prev: UserState, formData: FormData): Promise<UserState> {
   let admin;
@@ -68,7 +96,6 @@ export async function inviteUserAction(_prev: UserState, formData: FormData): Pr
   });
   if (existing) return { fieldErrors: { email: 'That address already has an account.' } };
 
-  const temporaryPassword = crypto.randomBytes(9).toString('base64url');
   const slug = await uniqueSlug(slugify(parsed.data.name), async (candidate) =>
     Boolean(await prisma.user.findUnique({ where: { slug: candidate }, select: { id: true } })),
   );
@@ -80,16 +107,86 @@ export async function inviteUserAction(_prev: UserState, formData: FormData): Pr
       slug,
       role: parsed.data.role as Role,
       bio: parsed.data.bio || null,
-      hashedPassword: await bcrypt.hash(temporaryPassword, 10),
+      hashedPassword: null,
     },
   });
 
-  await audit(admin.id, 'user.invite', user.id, { role: parsed.data.role });
+  const result = await sendInvitation(user.id, user.name, user.email, user.role, admin.name ?? 'An administrator');
+
+  await audit(admin.id, 'user.invite', user.id, {
+    role: parsed.data.role,
+    emailSent: result.emailSent,
+  });
   revalidatePath('/admin/users');
 
   return {
     ok: true,
-    message: `Invited ${parsed.data.name}. Temporary password: ${temporaryPassword} — send it over a channel you trust, they can change it in their account.`,
+    link: result.link,
+    emailSent: result.emailSent,
+    message: result.emailSent
+      ? `Invitation sent to ${parsed.data.email}.`
+      : `${parsed.data.name} was added, but the invitation email could not be delivered. Send them the link below.`,
+  };
+}
+
+/** Issues a fresh token and mails it. Shared by invite and re-invite. */
+async function sendInvitation(
+  userId: string,
+  name: string,
+  email: string,
+  role: Role,
+  invitedBy: string,
+): Promise<{ link: string; emailSent: boolean }> {
+  const requestHeaders = await headers();
+  const { token } = await issueResetToken(userId, hash(clientIp(requestHeaders)), INVITE_TTL_MINUTES);
+  const link = `${SITE_URL}/reset-password?token=${token}`;
+
+  const message = inviteEmail(name, invitedBy, ROLE_LABELS[role], link, INVITE_TTL_MINUTES / (24 * 60));
+  const sent = await sendEmail({ to: email, ...message });
+
+  // EMAIL_ENABLED is false in development, where sendEmail prints to the
+  // console and reports success. Calling that "sent" would be a lie on a
+  // screen an admin is about to act on.
+  return { link, emailSent: EMAIL_ENABLED && sent.ok };
+}
+
+/**
+ * Re-sends an invitation. Issuing a new token invalidates the previous one, so
+ * a forwarded old email stops working the moment a new one goes out.
+ */
+export async function resendInviteAction(userId: string): Promise<UserState> {
+  let admin;
+  try {
+    admin = await assertCapability('users.manage');
+  } catch {
+    return { error: 'Not authorised.' };
+  }
+
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { id: true, name: true, email: true, role: true, hashedPassword: true },
+  });
+  if (!user) return { error: 'That account no longer exists.' };
+  if (user.hashedPassword) {
+    return { error: `${user.name} has already set a password — send a reset instead.` };
+  }
+
+  const result = await sendInvitation(
+    user.id,
+    user.name,
+    user.email,
+    user.role,
+    admin.name ?? 'An administrator',
+  );
+  await audit(admin.id, 'user.invite.resend', user.id, { emailSent: result.emailSent });
+
+  return {
+    ok: true,
+    link: result.link,
+    emailSent: result.emailSent,
+    message: result.emailSent
+      ? `Invitation re-sent to ${user.email}.`
+      : 'Could not deliver the email. Send them the link below.',
   };
 }
 
@@ -144,6 +241,15 @@ export async function deleteUserAction(userId: string): Promise<UserState> {
   return { ok: true, message: 'Account deleted.' };
 }
 
+/**
+ * Sends the person a reset link rather than handing the admin a password.
+ *
+ * The old version generated a temporary password and printed it on screen for
+ * the admin to relay. That means an administrator knows a working credential
+ * for someone else's account, it travels through whatever chat app is to hand,
+ * and it never expires. A link the person opens themselves keeps the password
+ * something only they know.
+ */
 export async function resetPasswordAction(userId: string): Promise<UserState> {
   let admin;
   try {
@@ -152,12 +258,28 @@ export async function resetPasswordAction(userId: string): Promise<UserState> {
     return { error: 'Not authorised.' };
   }
 
-  const temporaryPassword = crypto.randomBytes(9).toString('base64url');
-  await prisma.user.update({
+  const user = await prisma.user.findUnique({
     where: { id: userId },
-    data: { hashedPassword: await bcrypt.hash(temporaryPassword, 10) },
+    select: { id: true, name: true, email: true },
   });
+  if (!user) return { error: 'That account no longer exists.' };
 
-  await audit(admin.id, 'user.password.reset', userId);
-  return { ok: true, message: `Temporary password: ${temporaryPassword}` };
+  const requestHeaders = await headers();
+  const { token } = await issueResetToken(user.id, hash(clientIp(requestHeaders)));
+  const link = `${SITE_URL}/reset-password?token=${token}`;
+
+  const message = passwordResetEmail(user.name, link, TOKEN_TTL_MINUTES);
+  const sent = await sendEmail({ to: user.email, ...message });
+  const emailSent = EMAIL_ENABLED && sent.ok;
+
+  await audit(admin.id, 'user.password.reset', userId, { emailSent });
+
+  return {
+    ok: true,
+    link,
+    emailSent,
+    message: emailSent
+      ? `Reset link sent to ${user.email}. It expires in ${TOKEN_TTL_MINUTES} minutes.`
+      : 'Could not deliver the email. Send them the link below — it expires in an hour.',
+  };
 }

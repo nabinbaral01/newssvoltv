@@ -15,6 +15,16 @@ import { prisma } from './prisma';
 
 export const TOKEN_TTL_MINUTES = 60;
 
+/**
+ * Invitations get a much longer window than a reset. A reset is answering a
+ * request someone made seconds ago; an invitation lands in a colleague's inbox
+ * and may sit there over a weekend. An hour would mean most invites are dead
+ * before they are opened, and the mitigation for the longer life is the same:
+ * single use, invalidated by the next issue, and useless once the password is
+ * set.
+ */
+export const INVITE_TTL_MINUTES = 7 * 24 * 60;
+
 /** URL-safe, 256 bits of entropy. */
 function generateToken(): string {
   return crypto.randomBytes(32).toString('base64url');
@@ -33,9 +43,10 @@ export function hashToken(token: string): string {
 export async function issueResetToken(
   userId: string,
   ipHash?: string,
+  ttlMinutes: number = TOKEN_TTL_MINUTES,
 ): Promise<{ token: string; expiresAt: Date }> {
   const token = generateToken();
-  const expiresAt = new Date(Date.now() + TOKEN_TTL_MINUTES * 60_000);
+  const expiresAt = new Date(Date.now() + ttlMinutes * 60_000);
 
   await prisma.$transaction([
     prisma.passwordResetToken.updateMany({
