@@ -1,12 +1,17 @@
 import type { MetadataRoute } from 'next';
 
+import { buildSafe } from '@/lib/build-safe';
 import { prisma } from '@/lib/prisma';
 import { SITE_URL } from '@/lib/site';
 
 export const revalidate = 3600;
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  const [posts, categories, contentTypes, tags, authors] = await Promise.all([
+  // A sitemap missing its dynamic entries is far better than a failed deploy;
+  // the next revalidation picks them all up.
+  const [posts, categories, contentTypes, tags, authors] = await buildSafe(
+    'sitemap',
+    () => Promise.all([
     prisma.post.findMany({
       where: { status: 'PUBLISHED', publishedAt: { lte: new Date() }, deletedAt: null },
       select: {
@@ -25,7 +30,9 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       where: { posts: { some: { status: 'PUBLISHED' } } },
       select: { slug: true },
     }),
-  ]);
+    ]),
+    [[], [], [], [], []] as never,
+  );
 
   const staticRoutes: MetadataRoute.Sitemap = [
     { url: SITE_URL, changeFrequency: 'hourly', priority: 1 },

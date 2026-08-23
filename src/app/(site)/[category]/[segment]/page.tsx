@@ -10,6 +10,7 @@ import { Comments } from '@/components/site/comments';
 import { GridCard } from '@/components/site/post-card';
 import { ShareButtons } from '@/components/site/share-buttons';
 import { SectionHeading } from '@/components/ui/surface';
+import { buildSafe } from '@/lib/build-safe';
 import { prisma } from '@/lib/prisma';
 import {
   getArchive,
@@ -52,6 +53,7 @@ async function resolveContentType(categorySlug: string, segment: string) {
  * long tail of a news archive is not worth a build-time round trip each deploy.
  */
 export async function generateStaticParams() {
+  return buildSafe('article prerender list', async () => {
   const [posts, categories, contentTypes] = await Promise.all([
     prisma.post.findMany({
       where: { status: 'PUBLISHED', publishedAt: { lte: new Date() }, deletedAt: null },
@@ -69,6 +71,7 @@ export async function generateStaticParams() {
       contentTypes.map((type) => ({ category: category.slug, segment: type.slug })),
     ),
   ];
+  }, []);
 }
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {

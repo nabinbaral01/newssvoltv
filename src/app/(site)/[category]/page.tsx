@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 
 import { ArchiveView, Pagination } from '@/components/site/archive-view';
+import { buildSafe } from '@/lib/build-safe';
 import { prisma } from '@/lib/prisma';
 import { getArchive, getNavigation } from '@/lib/queries';
 
@@ -21,11 +22,13 @@ async function loadCategory(slug: string) {
 }
 
 export async function generateStaticParams() {
-  const categories = await prisma.category.findMany({
-    where: { isActive: true },
-    select: { slug: true },
-  });
-  return categories.map((c) => ({ category: c.slug }));
+  return buildSafe('category prerender list', async () => {
+    const categories = await prisma.category.findMany({
+      where: { isActive: true },
+      select: { slug: true },
+    });
+    return categories.map((c) => ({ category: c.slug }));
+  }, []);
 }
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {

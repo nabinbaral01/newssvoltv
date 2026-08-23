@@ -1,5 +1,6 @@
+import { buildSafe } from '@/lib/build-safe';
 import { prisma } from '@/lib/prisma';
-import { getSettings, SITE_URL } from '@/lib/site';
+import { DEFAULT_SETTINGS, getSettings, SITE_URL } from '@/lib/site';
 
 export const revalidate = 900;
 
@@ -13,7 +14,7 @@ function escapeXml(value: string): string {
 }
 
 export async function GET() {
-  const [settings, posts] = await Promise.all([
+  const [settings, posts] = await buildSafe('rss feed', () => Promise.all([
     getSettings(),
     prisma.post.findMany({
       where: { status: 'PUBLISHED', publishedAt: { lte: new Date() }, deletedAt: null },
@@ -30,7 +31,9 @@ export async function GET() {
         tags: { select: { name: true } },
       },
     }),
-  ]);
+    ]),
+    [DEFAULT_SETTINGS, []] as never,
+  );
 
   const items = posts
     .map((post) => {
