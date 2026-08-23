@@ -1,0 +1,264 @@
+@import 'tailwindcss';
+
+/* next-themes toggles .dark on <html>; Tailwind v4 needs the variant declared. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-elevated: var(--elevated);
+  --color-fg: var(--fg);
+  --color-muted: var(--muted);
+  --color-border: var(--border);
+  --color-accent: var(--accent);
+  --color-accent-fg: var(--accent-fg);
+  --color-volt: var(--volt);
+  --color-danger: var(--danger);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+
+  --font-sans: var(--font-body);
+  --font-display: var(--font-headline);
+
+  --radius-card: 0.375rem;
+}
+
+/* Dark is the primary design. Light mode is a working alternate, not an
+   inversion — surfaces get lighter, the accent darkens to hold AA on white. */
+:root {
+  --bg: #141414;
+  --surface: #1e1e1e;
+  --elevated: #262626;
+  --fg: #f5f5f5;
+  --muted: #a1a1aa;
+  --border: #2e2e2e;
+  --accent: #00e88f;
+  --accent-fg: #141414;
+  --volt: #f43f5e;
+  --danger: #ff5c5c;
+  --success: #4ade80;
+  --warning: #fbbf24;
+  color-scheme: dark;
+}
+
+:root:not(.dark) {
+  --bg: #ffffff;
+  --surface: #f6f6f7;
+  --elevated: #ffffff;
+  --fg: #16161a;
+  --muted: #5c5c66;
+  --border: #e2e2e6;
+  --accent: #067647;
+  --accent-fg: #ffffff;
+  --volt: #be123c;
+  --danger: #c22b2b;
+  --success: #15803d;
+  --warning: #a16207;
+  color-scheme: light;
+}
+
+/* ---------------------------------------------------------------- charts
+   Categorical slots are assigned in fixed order and never cycled; both modes
+   are separately stepped for their own surface. The order below is not a
+   preference — it is the output of the palette validator, which is what keeps
+   adjacent series apart under protanopia and deuteranopia. Re-ordering or
+   substituting a slot by eye breaks that, so re-run the validator if you do.
+
+   Single-series charts use --chart-primary, the only place the brand colour
+   does data-encoding work. */
+:root {
+  --chart-surface: var(--surface);
+  --chart-grid: #2a2a2a;
+  --chart-axis: #6b6b73;
+  --chart-primary: #f43f5e;
+  --chart-primary-soft: rgba(244, 63, 94, 0.16);
+  --chart-compare: #6b6b73;
+
+  --series-1: #e05252;
+  --series-2: #199e70;
+  --series-3: #d95926;
+  --series-4: #00a3a3;
+  --series-5: #9085e9;
+  --series-6: #4d9e2f;
+
+  /* Sequential ramp (magnitude): one hue, monotone. Dark mode runs dark→light. */
+  --seq-1: #0b3d24;
+  --seq-2: #14653e;
+  --seq-3: #1b8a54;
+  --seq-4: #22b36b;
+  --seq-5: #4ee29b;
+  --seq-empty: #2a2a2a;
+}
+
+:root:not(.dark) {
+  --chart-grid: #e7e7ea;
+  --chart-axis: #6b6b73;
+  --chart-primary: #be123c;
+  --chart-primary-soft: rgba(190, 18, 60, 0.14);
+  --chart-compare: #9a9aa2;
+
+  --series-1: #c0392b;
+  --series-2: #1baf7a;
+  --series-3: #eb6834;
+  --series-4: #00a0a8;
+  --series-5: #6b5fd6;
+  --series-6: #4d9e2f;
+
+  --seq-1: #e7f8ef;
+  --seq-2: #a7e9c6;
+  --seq-3: #43c285;
+  --seq-4: #1b8a54;
+  --seq-5: #0b4f30;
+  --seq-empty: #ececef;
+}
+
+* {
+  border-color: var(--border);
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-body), ui-sans-serif, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* The condensed headline face carries most of the identity. Tight tracking and
+   a slightly squeezed line-height are what make the grid read as a front page
+   rather than a blog. */
+.font-display,
+h1,
+h2,
+h3,
+h4 {
+  font-family: var(--font-headline), var(--font-body), ui-sans-serif, sans-serif;
+  letter-spacing: -0.01em;
+  line-height: 1.04;
+}
+
+@utility headline {
+  font-family: var(--font-headline), ui-sans-serif, sans-serif;
+  font-weight: 600;
+  line-height: 1.05;
+  letter-spacing: -0.015em;
+  text-wrap: balance;
+}
+
+/* Text sitting on an image always gets this, in both themes. */
+@utility img-scrim {
+  background-image: linear-gradient(to top, rgba(0, 0, 0, 0.9) 0%, rgba(0, 0, 0, 0.55) 32%, transparent 60%);
+}
+
+@utility card-hover {
+  transition: transform 180ms ease, border-color 180ms ease;
+}
+
+@layer base {
+  ::selection {
+    background: var(--accent);
+    color: var(--accent-fg);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+
+  /* Respect the reader's motion preference everywhere, including the
+     carousels and the scroll-triggered modal. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.001ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.001ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+/* Rendered article body. Kept here rather than in the renderer so the admin
+   preview and the public page cannot drift apart. */
+.prose-volt {
+  font-size: 1.0625rem;
+  line-height: 1.72;
+}
+.prose-volt > * + * {
+  margin-top: 1.15em;
+}
+.prose-volt h2 {
+  font-size: clamp(1.6rem, 3.2vw, 2.1rem);
+  margin-top: 2em;
+  font-weight: 600;
+}
+.prose-volt h3 {
+  font-size: clamp(1.3rem, 2.6vw, 1.6rem);
+  margin-top: 1.6em;
+  font-weight: 600;
+}
+.prose-volt a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.prose-volt blockquote {
+  border-left: 3px solid var(--accent);
+  padding: 0.15em 0 0.15em 1.15em;
+  font-family: var(--font-headline), sans-serif;
+  font-size: 1.4rem;
+  line-height: 1.3;
+  color: var(--fg);
+}
+.prose-volt ul,
+.prose-volt ol {
+  padding-left: 1.35em;
+}
+.prose-volt ul {
+  list-style: disc;
+}
+.prose-volt ol {
+  list-style: decimal;
+}
+.prose-volt li + li {
+  margin-top: 0.5em;
+}
+.prose-volt img {
+  border-radius: var(--radius-card);
+  width: 100%;
+  height: auto;
+}
+.prose-volt code {
+  background: var(--elevated);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 0.1em 0.35em;
+  font-size: 0.9em;
+}
+.prose-volt pre {
+  background: var(--elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  padding: 1rem;
+  overflow-x: auto;
+}
+.prose-volt pre code {
+  background: none;
+  border: none;
+  padding: 0;
+}
+
+/* Horizontal rails: scrollable on mobile without a visible scrollbar. */
+.no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
