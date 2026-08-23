@@ -1,0 +1,671 @@
+import { prisma } from './prisma';
+
+/**
+ * Everything the dashboards read.
+ *
+ * Charts and tables query `DailyMetric` — the nightly rollup — never the raw
+ * `PageView` table. Raw events are used in exactly three places, each marked
+ * below: realtime (last 5 minutes), demographic cross-tabs, and geo drill-down
+ * beyond the pre-aggregated dimensions.
+ */
+
+const DAY = 86_400_000;
+
+export type RangePreset = 'today' | '7d' | '30d' | '90d' | 'custom';
+
+export type DateRange = {
+  from: Date;
+  to: Date;
+  days: number;
+  preset: RangePreset;
+  previous: { from: Date; to: Date };
+};
+
+function startOfDay(date: Date): Date {
+  const copy = new Date(date);
+  copy.setUTCHours(0, 0, 0, 0);
+  return copy;
+}
+
+/** Parses the global date-range picker. Every dashboard shares this shape. */
+export function parseRange(params: {
+  preset?: string;
+  from?: string;
+  to?: string;
+}): DateRange {
+  const today = startOfDay(new Date());
+  const preset = (params.preset ?? (params.from ? 'custom' : '30d')) as RangePreset;
+
+  let from: Date;
+  let to = today;
+
+  if (preset === 'custom' && params.from) {
+    from = startOfDay(new Date(params.from));
+    to = params.to ? startOfDay(new Date(params.to)) : today;
+    if (Number.isNaN(from.getTime())) from = new Date(today.getTime() - 29 * DAY);
+    if (Number.isNaN(to.getTime())) to = today;
+    if (from > to) [from, to] = [to, from];
+  } else {
+    const spans: Record<string, number> = { today: 0, '7d': 6, '30d': 29, '90d': 89 };
+    from = new Date(today.getTime() - (spans[preset] ?? 29) * DAY);
+  }
+
+  const days = Math.round((to.getTime() - from.getTime()) / DAY) + 1;
+
+  return {
+    from,
+    to,
+    days,
+    preset,
+    // Immediately-preceding window of equal length, for the % deltas.
+    previous: {
+      from: new Date(from.getTime() - days * DAY),
+      to: new Date(from.getTime() - DAY),
+    },
+  };
+}
+
+export const RANGE_LABELS: Record<RangePreset, string> = {
+  today: 'Today',
+  '7d': 'Last 7 days',
+  '30d': 'Last 30 days',
+  '90d': 'Last 90 days',
+  custom: 'Custom',
+};
+
+// ---------------------------------------------------------------- totals
+
+export type Totals = {
+  pageViews: number;
+  visitors: number;
+  sessions: number;
+  bounces: number;
+  bounceRate: number;
+  avgDurationSeconds: number;
+  pagesPerSession: number;
+  avgScrollPercent: number;
+  newVisitors: number;
+};
+
+async function totalsFor(from: Date, to: Date): Promise<Totals> {
+  const agg = await prisma.dailyMetric.aggregate({
+    where: { dimension: 'total', day: { gte: from, lte: to } },
+    _sum: {
+      pageViews: true,
+      visitors: true,
+      sessions: true,
+      bounces: true,
+      totalDuration: true,
+      totalScroll: true,
+      scrollSamples: true,
+      newVisitors: true,
+    },
+  });
+
+  const s = agg._sum;
+  const pageViews = s.pageViews ?? 0;
+  const sessions = s.sessions ?? 0;
+
+  return {
+    pageViews,
+    // Summed daily uniques. A visitor who reads on three days counts three
+    // times here; `uniqueVisitors()` below is the exact figure when it matters.
+    visitors: s.visitors ?? 0,
+    sessions,
+    bounces: s.bounces ?? 0,
+    bounceRate: sessions ? (s.bounces ?? 0) / sessions : 0,
+    avgDurationSeconds: pageViews ? (s.totalDuration ?? 0) / pageViews : 0,
+    pagesPerSession: sessions ? pageViews / sessions : 0,
+    avgScrollPercent: s.scrollSamples ? (s.totalScroll ?? 0) / s.scrollSamples : 0,
+    newVisitors: s.newVisitors ?? 0,
+  };
+}
+
+export async function getTotals(range: DateRange) {
+  const [current, previous] = await Promise.all([
+    totalsFor(range.from, range.to),
+    totalsFor(range.previous.from, range.previous.to),
+  ]);
+  return { current, previous };
+}
+
+/**
+ * Exact distinct visitors across the whole window — the summed-daily figure
+ * over-counts returning readers. Hits raw events, so it is only used for the
+ * headline tile.
+ */
+export async function uniqueVisitors(range: DateRange): Promise<number> {
+  const [row] = await prisma.$queryRaw<{ count: bigint }[]>`
+    SELECT COUNT(DISTINCT "visitorId")::bigint AS count
+    FROM "PageView"
+    WHERE "createdAt" >= ${range.from} AND "createdAt" < ${new Date(range.to.getTime() + DAY)}
+  `;
+  return Number(row?.count ?? 0);
+}
+
+// ---------------------------------------------------------------- series
+
+export type SeriesPoint = {
+  day: string;
+  pageViews: number;
+  visitors: number;
+  sessions: number;
+  bounces: number;
+  bounceRate: number;
+  avgDurationSeconds: number;
+};
+
+/** Daily series for the traffic chart, gap-filled so missing days render as 0. */
+export async function getSeries(
+  range: DateRange,
+  dimension = 'total',
+  value = 'all',
+): Promise<SeriesPoint[]> {
+  const rows = await prisma.dailyMetric.findMany({
+    where: { dimension, value, day: { gte: range.from, lte: range.to } },
+    orderBy: { day: 'asc' },
+  });
+
+  const byDay = new Map(rows.map((r) => [r.day.toISOString().slice(0, 10), r]));
+  const out: SeriesPoint[] = [];
+
+  for (let t = range.from.getTime(); t <= range.to.getTime(); t += DAY) {
+    const key = new Date(t).toISOString().slice(0, 10);
+    const row = byDay.get(key);
+    out.push({
+      day: key,
+      pageViews: row?.pageViews ?? 0,
+      visitors: row?.visitors ?? 0,
+      sessions: row?.sessions ?? 0,
+      bounces: row?.bounces ?? 0,
+      bounceRate: row?.sessions ? row.bounces / row.sessions : 0,
+      avgDurationSeconds: row?.pageViews ? row.totalDuration / row.pageViews : 0,
+    });
+  }
+
+  return out;
+}
+
+/** Sparkline data for the KPI tiles: one number per day, already ordered. */
+export async function getSparklines(range: DateRange) {
+  const series = await getSeries(range);
+  return {
+    pageViews: series.map((p) => p.pageViews),
+    visitors: series.map((p) => p.visitors),
+    sessions: series.map((p) => p.sessions),
+    bounceRate: series.map((p) => Math.round(p.bounceRate * 100)),
+    avgDuration: series.map((p) => Math.round(p.avgDurationSeconds)),
+  };
+}
+
+// ---------------------------------------------------------------- breakdowns
+
+export type BreakdownRow = {
+  value: string;
+  pageViews: number;
+  visitors: number;
+  sessions: number;
+  bounces: number;
+  bounceRate: number;
+  avgDurationSeconds: number;
+  share: number;
+};
+
+export async function getBreakdown(
+  range: DateRange,
+  dimension: string,
+  limit = 20,
+): Promise<BreakdownRow[]> {
+  const rows = await prisma.dailyMetric.groupBy({
+    by: ['value'],
+    where: { dimension, day: { gte: range.from, lte: range.to } },
+    _sum: {
+      pageViews: true,
+      visitors: true,
+      sessions: true,
+      bounces: true,
+      totalDuration: true,
+    },
+    orderBy: { _sum: { pageViews: 'desc' } },
+    take: limit,
+  });
+
+  const total = rows.reduce((sum, r) => sum + (r._sum.pageViews ?? 0), 0);
+
+  return rows.map((row) => {
+    const pageViews = row._sum.pageViews ?? 0;
+    const sessions = row._sum.sessions ?? 0;
+    return {
+      value: row.value,
+      pageViews,
+      visitors: row._sum.visitors ?? 0,
+      sessions,
+      bounces: row._sum.bounces ?? 0,
+      bounceRate: sessions ? (row._sum.bounces ?? 0) / sessions : 0,
+      avgDurationSeconds: pageViews ? (row._sum.totalDuration ?? 0) / pageViews : 0,
+      share: total ? pageViews / total : 0,
+    };
+  });
+}
+
+/** Country totals for the choropleth — every country, not a top-N slice. */
+export async function getCountryTotals(range: DateRange) {
+  return getBreakdown(range, 'country', 300);
+}
+
+/**
+ * City drill-down for one country. Cities are pre-aggregated under the key
+ * "CC|City", so this stays on the rollup table.
+ */
+export async function getCitiesForCountry(range: DateRange, country: string) {
+  const rows = await prisma.dailyMetric.groupBy({
+    by: ['value'],
+    where: {
+      dimension: 'city',
+      value: { startsWith: `${country}|` },
+      day: { gte: range.from, lte: range.to },
+    },
+    _sum: { pageViews: true, visitors: true, sessions: true, bounces: true, totalDuration: true },
+    orderBy: { _sum: { pageViews: 'desc' } },
+    take: 50,
+  });
+
+  return rows.map((row) => {
+    const pageViews = row._sum.pageViews ?? 0;
+    const sessions = row._sum.sessions ?? 0;
+    return {
+      city: row.value.split('|')[1] ?? row.value,
+      pageViews,
+      visitors: row._sum.visitors ?? 0,
+      sessions,
+      bounceRate: sessions ? (row._sum.bounces ?? 0) / sessions : 0,
+      avgDurationSeconds: pageViews ? (row._sum.totalDuration ?? 0) / pageViews : 0,
+    };
+  });
+}
+
+/** New vs returning, from the rollup's newVisitors counter. */
+export async function getNewVsReturning(range: DateRange) {
+  const agg = await prisma.dailyMetric.aggregate({
+    where: { dimension: 'total', day: { gte: range.from, lte: range.to } },
+    _sum: { sessions: true, newVisitors: true },
+  });
+  const sessions = agg._sum.sessions ?? 0;
+  const fresh = Math.min(agg._sum.newVisitors ?? 0, sessions);
+  return { new: fresh, returning: Math.max(0, sessions - fresh), sessions };
+}
+
+// ---------------------------------------------------------------- content
+
+export type PostPerformance = {
+  id: string;
+  title: string;
+  slug: string;
+  categoryName: string;
+  categorySlug: string;
+  contentTypeName: string;
+  authorName: string;
+  pageViews: number;
+  visitors: number;
+  avgDurationSeconds: number;
+  avgScrollPercent: number;
+  comments: number;
+};
+
+export async function getTopPosts(range: DateRange, limit = 10): Promise<PostPerformance[]> {
+  const rows = await prisma.dailyMetric.groupBy({
+    by: ['value'],
+    where: { dimension: 'post', day: { gte: range.from, lte: range.to } },
+    _sum: {
+      pageViews: true,
+      visitors: true,
+      totalDuration: true,
+      totalScroll: true,
+      scrollSamples: true,
+    },
+    orderBy: { _sum: { pageViews: 'desc' } },
+    take: limit,
+  });
+
+  if (!rows.length) return [];
+
+  const posts = await prisma.post.findMany({
+    where: { id: { in: rows.map((r) => r.value) } },
+    select: {
+      id: true,
+      title: true,
+      slug: true,
+      category: { select: { name: true, slug: true } },
+      contentType: { select: { name: true } },
+      author: { select: { name: true } },
+      _count: { select: { comments: true } },
+    },
+  });
+  const byId = new Map(posts.map((p) => [p.id, p]));
+
+  return rows
+    .map((row) => {
+      const post = byId.get(row.value);
+      if (!post) return null;
+      const pageViews = row._sum.pageViews ?? 0;
+      return {
+        id: post.id,
+        title: post.title,
+        slug: post.slug,
+        categoryName: post.category.name,
+        categorySlug: post.category.slug,
+        contentTypeName: post.contentType.name,
+        authorName: post.author.name,
+        pageViews,
+        visitors: row._sum.visitors ?? 0,
+        avgDurationSeconds: pageViews ? (row._sum.totalDuration ?? 0) / pageViews : 0,
+        avgScrollPercent: row._sum.scrollSamples
+          ? (row._sum.totalScroll ?? 0) / row._sum.scrollSamples
+          : 0,
+        comments: post._count.comments,
+      };
+    })
+    .filter((row): row is PostPerformance => row !== null);
+}
+
+/** Author / category / content-type leaderboards, resolved to names. */
+export async function getLabelledBreakdown(
+  range: DateRange,
+  dimension: 'author' | 'category' | 'contentType',
+  limit = 20,
+) {
+  const rows = await getBreakdown(range, dimension, limit);
+  if (!rows.length) return [];
+
+  const ids = rows.map((r) => r.value);
+  const labels = new Map<string, string>();
+
+  if (dimension === 'author') {
+    const users = await prisma.user.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } });
+    users.forEach((u) => labels.set(u.id, u.name));
+  } else if (dimension === 'category') {
+    const cats = await prisma.category.findMany({ where: { id: { in: ids } }, select: { id: true, name: true, colour: true } });
+    cats.forEach((c) => labels.set(c.id, c.name));
+  } else {
+    const types = await prisma.contentType.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } });
+    types.forEach((t) => labels.set(t.id, t.name));
+  }
+
+  return rows.map((row) => ({ ...row, label: labels.get(row.value) ?? 'Unknown' }));
+}
+
+// ---------------------------------------------------------------- realtime
+
+/** The only place that reads raw events by design: the last five minutes. */
+export async function getRealtime() {
+  const since = new Date(Date.now() - 5 * 60_000);
+
+  const [active, byPath, byCountry, recent] = await Promise.all([
+    prisma.$queryRaw<{ count: bigint }[]>`
+      SELECT COUNT(DISTINCT "visitorId")::bigint AS count
+      FROM "PageView" WHERE "createdAt" >= ${since}
+    `,
+    prisma.pageView.groupBy({
+      by: ['path'],
+      where: { createdAt: { gte: since } },
+      _count: { _all: true },
+      orderBy: { _count: { path: 'desc' } },
+      take: 10,
+    }),
+    prisma.pageView.groupBy({
+      by: ['country'],
+      where: { createdAt: { gte: since }, country: { not: null } },
+      _count: { _all: true },
+      orderBy: { _count: { country: 'desc' } },
+      take: 10,
+    }),
+    prisma.pageView.findMany({
+      where: { createdAt: { gte: since } },
+      orderBy: { createdAt: 'desc' },
+      take: 12,
+      select: {
+        path: true,
+        country: true,
+        city: true,
+        deviceType: true,
+        createdAt: true,
+        post: { select: { title: true } },
+      },
+    }),
+  ]);
+
+  return {
+    activeVisitors: Number(active[0]?.count ?? 0),
+    since,
+    topPaths: byPath.map((row) => ({ path: row.path, views: row._count._all })),
+    topCountries: byCountry.map((row) => ({ country: row.country ?? '??', views: row._count._all })),
+    recent: recent.map((row) => ({
+      path: row.path,
+      title: row.post?.title ?? row.path,
+      country: row.country,
+      city: row.city,
+      deviceType: row.deviceType,
+      at: row.createdAt,
+    })),
+  };
+}
+
+// ---------------------------------------------------------------- demographics
+
+export type DemographicBucket = { bucket: string; value: number; share: number };
+
+export type DemographicReport = {
+  /** Views we could attribute to a signed-in reader who answered the question. */
+  known: number;
+  /** All views in the window — the denominator that makes coverage honest. */
+  total: number;
+  coverage: number;
+  buckets: DemographicBucket[];
+  source: 'SELF_DECLARED' | 'SURVEY' | 'PANEL';
+  sampleSize?: number;
+  /** ±%, at 95% confidence. Only meaningful for the survey source. */
+  marginOfError?: number;
+};
+
+function toBuckets(rows: { value: string; pageViews: number }[]): DemographicBucket[] {
+  const total = rows.reduce((sum, r) => sum + r.pageViews, 0);
+  return rows.map((row) => ({
+    bucket: row.value,
+    value: row.pageViews,
+    share: total ? row.pageViews / total : 0,
+  }));
+}
+
+/**
+ * Self-declared demographics, from the optional account fields.
+ *
+ * Accurate for the readers it covers and silent about everyone else, which is
+ * why `coverage` travels with the numbers everywhere they are displayed.
+ */
+export async function getSelfDeclared(
+  range: DateRange,
+  question: 'ageBucket' | 'gender',
+): Promise<DemographicReport> {
+  const [rows, totals, coverageRows] = await Promise.all([
+    prisma.dailyMetric.groupBy({
+      by: ['value'],
+      where: { dimension: question, day: { gte: range.from, lte: range.to } },
+      _sum: { pageViews: true },
+    }),
+    totalsFor(range.from, range.to),
+    prisma.dailyMetric.groupBy({
+      by: ['value'],
+      where: {
+        dimension: 'coverage',
+        value: question === 'ageBucket' ? 'knownAge' : 'knownGender',
+        day: { gte: range.from, lte: range.to },
+      },
+      _sum: { pageViews: true },
+    }),
+  ]);
+
+  const buckets = toBuckets(
+    rows.map((r) => ({ value: r.value, pageViews: r._sum.pageViews ?? 0 })),
+  );
+  const known = coverageRows[0]?._sum.pageViews ?? 0;
+
+  return {
+    known,
+    total: totals.pageViews,
+    coverage: totals.pageViews ? known / totals.pageViews : 0,
+    buckets,
+    source: 'SELF_DECLARED',
+  };
+}
+
+/**
+ * On-site poll results, projected. Reported with its sample size and a 95%
+ * margin of error so nobody reads a 1,400-response poll as a census.
+ */
+export async function getSurveyDemographics(
+  range: DateRange,
+  question: 'age' | 'gender',
+): Promise<DemographicReport> {
+  const rows = await prisma.surveyResponse.groupBy({
+    by: ['answer'],
+    where: { questionKey: question, createdAt: { gte: range.from, lte: new Date(range.to.getTime() + DAY) } },
+    _count: { _all: true },
+  });
+
+  const sampleSize = rows.reduce((sum, r) => sum + r._count._all, 0);
+  const buckets = toBuckets(rows.map((r) => ({ value: r.answer, pageViews: r._count._all })));
+  const totals = await totalsFor(range.from, range.to);
+
+  return {
+    known: sampleSize,
+    total: totals.pageViews,
+    coverage: totals.pageViews ? sampleSize / totals.pageViews : 0,
+    buckets,
+    source: 'SURVEY',
+    sampleSize,
+    // Standard 95% CI for a proportion at p = 0.5, the widest case.
+    marginOfError: sampleSize ? 1.96 * Math.sqrt(0.25 / sampleSize) : undefined,
+  };
+}
+
+/** Modelled third-party panel shares (GA4-shaped). Never per-visitor. */
+export async function getPanelDemographics(
+  range: DateRange,
+  question: 'age' | 'gender',
+): Promise<DemographicReport> {
+  const rows = await prisma.panelDemographic.groupBy({
+    by: ['bucket'],
+    where: { questionKey: question, day: { gte: range.from, lte: range.to } },
+    _avg: { share: true },
+  });
+
+  const total = rows.reduce((sum, r) => sum + (r._avg.share ?? 0), 0);
+
+  return {
+    known: 0,
+    total: 0,
+    coverage: 0,
+    buckets: rows.map((row) => ({
+      bucket: row.bucket,
+      value: Math.round((row._avg.share ?? 0) * 1000) / 10,
+      share: total ? (row._avg.share ?? 0) / total : 0,
+    })),
+    source: 'PANEL',
+  };
+}
+
+/**
+ * Cross-tabbed demographics (by category or country). Composite dimensions are
+ * not pre-aggregated, so this is the documented drill-down path into raw
+ * events — bounded by the 14-month retention window.
+ */
+export async function getDemographicCrosstab(
+  range: DateRange,
+  question: 'ageBucket' | 'gender',
+  filter: { categoryId?: string; country?: string },
+): Promise<DemographicReport> {
+  const to = new Date(range.to.getTime() + DAY);
+  const conditions = [`pv."createdAt" >= $1`, `pv."createdAt" < $2`];
+  const params: unknown[] = [range.from, to];
+
+  if (filter.country) {
+    params.push(filter.country);
+    conditions.push(`pv."country" = $${params.length}`);
+  }
+  if (filter.categoryId) {
+    params.push(filter.categoryId);
+    conditions.push(`p."categoryId" = $${params.length}`);
+  }
+
+  const bucketExpr =
+    question === 'ageBucket'
+      ? `CASE
+           WHEN EXTRACT(YEAR FROM pv."createdAt")::int - u."birthYear" <= 17 THEN '13-17'
+           WHEN EXTRACT(YEAR FROM pv."createdAt")::int - u."birthYear" <= 24 THEN '18-24'
+           WHEN EXTRACT(YEAR FROM pv."createdAt")::int - u."birthYear" <= 34 THEN '25-34'
+           WHEN EXTRACT(YEAR FROM pv."createdAt")::int - u."birthYear" <= 44 THEN '35-44'
+           WHEN EXTRACT(YEAR FROM pv."createdAt")::int - u."birthYear" <= 54 THEN '45-54'
+           WHEN EXTRACT(YEAR FROM pv."createdAt")::int - u."birthYear" <= 64 THEN '55-64'
+           ELSE '65+'
+         END`
+      : `u."gender"::text`;
+
+  const known = question === 'ageBucket' ? `u."birthYear" IS NOT NULL` : `u."gender" IS NOT NULL`;
+
+  const rows = await prisma.$queryRawUnsafe<{ bucket: string; views: bigint }[]>(
+    `
+    SELECT ${bucketExpr} AS bucket, COUNT(*)::bigint AS views
+    FROM "PageView" pv
+    JOIN "User" u ON u."id" = pv."userId"
+    LEFT JOIN "Post" p ON p."id" = pv."postId"
+    WHERE ${conditions.join(' AND ')} AND ${known}
+    GROUP BY 1
+    ORDER BY 2 DESC
+    `,
+    ...params,
+  );
+
+  const totalRows = await prisma.$queryRawUnsafe<{ views: bigint }[]>(
+    `
+    SELECT COUNT(*)::bigint AS views
+    FROM "PageView" pv
+    LEFT JOIN "Post" p ON p."id" = pv."postId"
+    WHERE ${conditions.join(' AND ')}
+    `,
+    ...params,
+  );
+
+  const buckets = toBuckets(
+    rows.map((r) => ({ value: r.bucket, pageViews: Number(r.views) })),
+  );
+  const known_ = buckets.reduce((sum, b) => sum + b.value, 0);
+  const total = Number(totalRows[0]?.views ?? 0);
+
+  return {
+    known: known_,
+    total,
+    coverage: total ? known_ / total : 0,
+    buckets,
+    source: 'SELF_DECLARED',
+  };
+}
+
+// ---------------------------------------------------------------- acquisition
+
+export async function getAcquisition(range: DateRange) {
+  const [sources, referrers, campaigns] = await Promise.all([
+    getBreakdown(range, 'source', 10),
+    getBreakdown(range, 'referrer', 20),
+    getBreakdown(range, 'campaign', 20),
+  ]);
+  return { sources, referrers, campaigns };
+}
+
+export async function getTechnology(range: DateRange) {
+  const [devices, browsers, operatingSystems] = await Promise.all([
+    getBreakdown(range, 'device', 10),
+    getBreakdown(range, 'browser', 12),
+    getBreakdown(range, 'os', 12),
+  ]);
+  return { devices, browsers, operatingSystems };
+}
