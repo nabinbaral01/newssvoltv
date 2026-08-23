@@ -231,10 +231,60 @@ export async function storeFile(file: File): Promise<StoredFile> {
   return storeLocal(buffer, file.name, file.type);
 }
 
-/** Local files are removed from disk; S3 objects are left to a lifecycle rule. */
+/**
+ * Removes the underlying file, whichever driver stored it.
+ *
+ * This used to return early for anything but `local`, on the theory that a
+ * lifecycle rule would tidy up. It does not: a Vercel Blob object stays
+ * publicly readable at its URL forever. Deleting the library row while the
+ * bytes stayed served meant "I deleted this photo" was simply untrue — the
+ * picture kept appearing on the site, because a blob URL does not care whether
+ * a database row still points at it.
+ *
+ * Failures are swallowed on purpose. The row is already gone by the time this
+ * runs, and an orphaned object is a storage bill, not a broken page.
+ */
 export async function deleteStoredFile(url: string): Promise<void> {
-  // Blob and S3 objects are left to a lifecycle rule / the Blob dashboard.
-  if (MEDIA_DRIVER !== 'local' || !url.startsWith('/uploads/')) return;
-  const target = path.join(process.cwd(), 'public', url);
-  await fs.unlink(target).catch(() => null);
+  try {
+    if (url.startsWith('/uploads/')) {
+      // Written by the local driver, whatever the current driver is — a file
+      // uploaded in development must still be removable after a switch.
+      const target = path.join(process.cwd(), 'public', url);
+      await fs.unlink(target).catch(() => null);
+      return;
+    }
+
+    if (MEDIA_DRIVER === 'blob' && url.includes('.public.blob.vercel-storage.com')) {
+      if (!process.env.BLOB_READ_WRITE_TOKEN) return;
+      const { del } = await import('@vercel/blob');
+      await del(url);
+      return;
+    }
+
+    const bucket = process.env.S3_BUCKET;
+    const publicBase = process.env.S3_PUBLIC_URL;
+    if (MEDIA_DRIVER === 's3' && bucket && publicBase) {
+      const prefix = `${publicBase.replace(/\/$/, '')}/`;
+      if (!url.startsWith(prefix)) return;
+
+      const { S3Client, DeleteObjectCommand } = await import('@aws-sdk/client-s3');
+      const client = new S3Client({
+        region: process.env.S3_REGION ?? 'auto',
+        ...(process.env.S3_ENDPOINT
+          ? { endpoint: process.env.S3_ENDPOINT, forcePathStyle: true }
+          : {}),
+        credentials: {
+          accessKeyId: process.env.S3_ACCESS_KEY_ID ?? '',
+          secretAccessKey: process.env.S3_SECRET_ACCESS_KEY ?? '',
+        },
+      });
+      await client.send(
+        new DeleteObjectCommand({ Bucket: bucket, Key: url.slice(prefix.length) }),
+      );
+    }
+  } catch (error) {
+    console.warn(
+      `[storage] could not delete ${url}: ${error instanceof Error ? error.message : error}`,
+    );
+  }
 }

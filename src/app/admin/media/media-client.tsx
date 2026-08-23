@@ -1,6 +1,7 @@
 'use client';
 
-import { Loader2, Search, Trash2, Upload } from 'lucide-react';
+import { AlertTriangle, Loader2, Search, Trash2, Upload } from 'lucide-react';
+import Link from 'next/link';
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
@@ -9,6 +10,16 @@ import { Button } from '@/components/ui/button';
 import { Checkbox, Input } from '@/components/ui/field';
 import { EmptyState } from '@/components/ui/surface';
 import { cn, formatDate } from '@/lib/utils';
+
+/** What the server sends back when a delete would break something. */
+type UsageConflict = {
+  id: string;
+  filename: string;
+  summary: string;
+  covers: { title: string; href: string }[];
+  inBody: string[];
+  avatars: string[];
+};
 
 export type MediaRow = {
   id: string;
@@ -33,6 +44,7 @@ function formatBytes(bytes: number): string {
 export function MediaClient({ assets, query }: { assets: MediaRow[]; query: string }) {
   const router = useRouter();
   const [selected, setSelected] = React.useState<Set<string>>(new Set());
+  const [conflicts, setConflicts] = React.useState<UsageConflict[]>([]);
   const [uploading, setUploading] = React.useState(false);
   const [search, setSearch] = React.useState(query);
   const [dragging, setDragging] = React.useState(false);
@@ -63,20 +75,39 @@ export function MediaClient({ assets, query }: { assets: MediaRow[]; query: stri
     router.refresh();
   };
 
-  const remove = async () => {
+  const remove = async (force = false) => {
     if (!selected.size) return;
-    if (!window.confirm(`Delete ${selected.size} file(s)? Anything still using them will break.`)) return;
+    if (!force && !window.confirm(`Delete ${selected.size} file(s)?`)) return;
+
     const res = await fetch('/api/admin/media', {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ids: [...selected] }),
+      body: JSON.stringify({ ids: [...selected], force }),
     });
     const data = await res.json();
+
+    // 409: the files are still on the site somewhere. Say where, rather than
+    // deleting and letting an editor discover the gap from a reader.
+    if (res.status === 409) {
+      setConflicts(data.inUse ?? []);
+      return;
+    }
     if (!res.ok) {
       toast.error(data.error ?? 'Delete failed.');
       return;
     }
-    toast.success(`${data.deleted} file(s) deleted${data.skipped ? `, ${data.skipped} skipped (not yours)` : ''}.`);
+
+    const notes: string[] = [];
+    if (data.skipped) notes.push(`${data.skipped} skipped (not yours)`);
+    if (data.cleared) notes.push(`${data.cleared} reference(s) cleared`);
+    if (data.leftInBody) {
+      notes.push(`${data.leftInBody} article(s) still embed it — edit those by hand`);
+    }
+    toast.success(
+      `${data.deleted} file(s) deleted${notes.length ? ` · ${notes.join(' · ')}` : ''}.`,
+    );
+
+    setConflicts([]);
     setSelected(new Set());
     router.refresh();
   };
@@ -125,11 +156,67 @@ export function MediaClient({ assets, query }: { assets: MediaRow[]; query: stri
         </label>
 
         {selected.size ? (
-          <Button variant="danger" onClick={remove}>
+          <Button variant="danger" onClick={() => void remove(false)}>
             <Trash2 className="size-4" aria-hidden /> Delete {selected.size}
           </Button>
         ) : null}
       </div>
+
+      {conflicts.length ? (
+        <div className="rounded-card border border-warning/50 bg-warning/10 p-4">
+          <div className="flex items-start gap-2">
+            <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden />
+            <div className="min-w-0 flex-1">
+              <h3 className="text-sm font-semibold">
+                {conflicts.length === 1
+                  ? 'This file is still on the site'
+                  : `${conflicts.length} of these files are still on the site`}
+              </h3>
+              <p className="mt-0.5 text-xs text-muted">
+                Deleting removes the picture from every page below. Cover images and profile
+                pictures are cleared automatically; anything embedded in an article body has to be
+                edited by hand.
+              </p>
+
+              <ul className="mt-3 space-y-3">
+                {conflicts.map((conflict) => (
+                  <li key={conflict.id} className="text-xs">
+                    <p className="font-medium">
+                      {conflict.filename}
+                      <span className="ml-2 font-normal text-muted">{conflict.summary}</span>
+                    </p>
+                    <ul className="mt-1 space-y-0.5 pl-3 text-muted">
+                      {conflict.covers.map((cover) => (
+                        <li key={cover.href}>
+                          cover ·{' '}
+                          <Link href={cover.href} target="_blank" className="hover:text-accent">
+                            {cover.title}
+                          </Link>
+                        </li>
+                      ))}
+                      {conflict.inBody.map((title) => (
+                        <li key={title}>in article body · {title}</li>
+                      ))}
+                      {conflict.avatars.map((name) => (
+                        <li key={name}>profile picture · {name}</li>
+                      ))}
+                    </ul>
+                  </li>
+                ))}
+              </ul>
+
+              <div className="mt-4 flex flex-wrap gap-2">
+                <Button variant="danger" size="sm" onClick={() => void remove(true)}>
+                  Delete anyway
+                </Button>
+                <Button variant="ghost" size="sm" onClick={() => setConflicts([])}>
+                  Keep them
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <p className="text-xs text-muted">Drag files anywhere on this panel to upload them.</p>
 
