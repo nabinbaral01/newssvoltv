@@ -1,0 +1,440 @@
+// Volt V — editorial publishing platform
+// Two independent taxonomy axes: Category (vertical) x ContentType (format).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------- enums
+
+enum Role {
+  ADMIN
+  EDITOR
+  AUTHOR
+  READER
+}
+
+enum Gender {
+  MALE
+  FEMALE
+  NON_BINARY
+  PREFER_NOT_TO_SAY
+}
+
+enum PostStatus {
+  DRAFT
+  IN_REVIEW
+  SCHEDULED
+  PUBLISHED
+  ARCHIVED
+}
+
+enum CommentStatus {
+  PENDING
+  APPROVED
+  SPAM
+}
+
+enum DeviceType {
+  DESKTOP
+  MOBILE
+  TABLET
+  BOT
+  UNKNOWN
+}
+
+/// Where a demographic data point came from. Never mix these silently:
+/// the dashboards label and weight each source differently.
+enum DemographicSource {
+  SELF_DECLARED
+  SURVEY
+  PANEL
+}
+
+// ---------------------------------------------------------------- people
+
+model User {
+  id             String    @id @default(cuid())
+  name           String
+  email          String    @unique
+  emailVerified  DateTime?
+  hashedPassword String?
+  image          String?
+  role           Role      @default(READER)
+  bio            String?
+  slug           String    @unique
+  socialLinks    Json?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  lastLoginAt    DateTime?
+
+  // Optional, self-declared. The only trustworthy demographic source we hold.
+  birthYear Int?
+  gender    Gender?
+  country   String?
+  city      String?
+
+  accounts      Account[]
+  resetTokens   PasswordResetToken[]
+  posts         Post[]         @relation("PostAuthor")
+  revisions PostRevision[]
+  comments  Comment[]
+  media     MediaAsset[]
+  auditLogs AuditLog[]
+  pageViews PageView[]
+
+  @@index([role])
+  @@index([createdAt])
+}
+
+/// Single-use password reset.
+///
+/// Only a SHA-256 hash of the token is stored: a leaked database backup must
+/// not hand someone a working set of reset links. The plaintext exists in the
+/// email and nowhere else.
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+  /// Salted hash of the requesting IP, for abuse investigation only.
+  ipHash    String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+/// OAuth account linkage (Google). Sessions themselves are JWT, not stored.
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  provider          String
+  providerAccountId String
+  type              String  @default("oauth")
+  refreshToken      String?
+  accessToken       String?
+  expiresAt         Int?
+  tokenType         String?
+  scope             String?
+  idToken           String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+// ---------------------------------------------------------------- taxonomy
+
+model Category {
+  id          String  @id @default(cuid())
+  name        String
+  slug        String  @unique
+  description String?
+  colour      String  @default("#00E88F")
+  parentId    String?
+  order       Int     @default(0)
+  isActive    Boolean @default(true)
+
+  parent   Category?  @relation("CategoryTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children Category[] @relation("CategoryTree")
+  posts    Post[]
+
+  @@index([parentId])
+  @@index([order])
+}
+
+/// The second axis. A post is "Movies x Review", never just "Movie Reviews".
+model ContentType {
+  id    String @id @default(cuid())
+  name  String
+  slug  String @unique
+  order Int    @default(0)
+
+  posts Post[]
+}
+
+model Tag {
+  id       String @id @default(cuid())
+  name     String
+  slug     String @unique
+  useCount Int    @default(0)
+
+  posts Post[] @relation("PostTags")
+
+  @@index([useCount])
+}
+
+// ---------------------------------------------------------------- content
+
+model Post {
+  id            String     @id @default(cuid())
+  title         String
+  slug          String     @unique
+  excerpt       String?
+  body          Json?
+  /// Flattened plain text of `body`, kept in sync on save. Feeds full-text search.
+  bodyText      String     @default("")
+  coverImage    String?
+  coverAlt      String?
+  categoryId    String
+  contentTypeId String
+  authorId      String
+  status        PostStatus @default(DRAFT)
+  publishedAt   DateTime?
+  scheduledFor  DateTime?
+
+  // Editorial placement flags. Deliberately manual — they beat a ranking
+  // algorithm until there is real traffic to rank on.
+  isFeatured   Boolean @default(false)
+  isTrending   Boolean @default(false)
+  isEditorPick Boolean @default(false)
+
+  readingTimeMinutes Int    @default(1)
+  viewCount          Int    @default(0)
+  rating             Float?
+
+  metaTitle       String?
+  metaDescription String?
+  ogImage         String?
+  previewToken    String  @default(cuid())
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  category    Category       @relation(fields: [categoryId], references: [id])
+  contentType ContentType    @relation(fields: [contentTypeId], references: [id])
+  author      User           @relation("PostAuthor", fields: [authorId], references: [id])
+  tags        Tag[]          @relation("PostTags")
+  comments    Comment[]
+  revisions   PostRevision[]
+  pageViews   PageView[]
+
+  @@index([status, publishedAt])
+  @@index([categoryId, status, publishedAt])
+  @@index([contentTypeId, status, publishedAt])
+  @@index([authorId, status])
+  @@index([isFeatured, status])
+  @@index([isTrending, status])
+  @@index([isEditorPick, status])
+  @@index([scheduledFor])
+  @@index([viewCount])
+}
+
+model PostRevision {
+  id        String   @id @default(cuid())
+  postId    String
+  authorId  String?
+  title     String
+  excerpt   String?
+  body      Json?
+  note      String?
+  createdAt DateTime @default(now())
+
+  post   Post  @relation(fields: [postId], references: [id], onDelete: Cascade)
+  author User? @relation(fields: [authorId], references: [id], onDelete: SetNull)
+
+  @@index([postId, createdAt])
+}
+
+model Comment {
+  id        String        @id @default(cuid())
+  postId    String
+  userId    String?
+  guestName String?
+  body      String
+  status    CommentStatus @default(PENDING)
+  parentId  String?
+  createdAt DateTime      @default(now())
+
+  post     Post      @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user     User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  parent   Comment?  @relation("CommentThread", fields: [parentId], references: [id], onDelete: Cascade)
+  children Comment[] @relation("CommentThread")
+
+  @@index([postId, status])
+  @@index([status, createdAt])
+  @@index([parentId])
+}
+
+model Newsletter {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  confirmed    Boolean   @default(false)
+  confirmToken String?
+  source       String    @default("footer")
+  createdAt    DateTime  @default(now())
+  confirmedAt  DateTime?
+
+  @@index([createdAt])
+  @@index([confirmed])
+}
+
+model MediaAsset {
+  id           String   @id @default(cuid())
+  url          String
+  filename     String
+  mimeType     String
+  width        Int?
+  height       Int?
+  sizeBytes    Int      @default(0)
+  altText      String?
+  uploadedById String?
+  createdAt    DateTime @default(now())
+
+  uploadedBy User? @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+  @@index([filename])
+}
+
+model SiteSetting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt
+}
+
+model AuditLog {
+  id       String  @id @default(cuid())
+  userId   String?
+  action   String
+  entity   String
+  entityId String?
+  diff     Json?
+  /// Salted hash only. Raw IPs are never persisted anywhere in this schema.
+  ipHash    String?
+  createdAt DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+  @@index([userId, createdAt])
+  @@index([entity, entityId])
+}
+
+// ---------------------------------------------------------------- analytics
+
+model PageView {
+  id          String  @id @default(cuid())
+  postId      String?
+  path        String
+  sessionId   String
+  /// Salted hash of a first-party cookie value, rotated with the salt.
+  visitorId   String
+  referrer    String?
+  utmSource   String?
+  utmMedium   String?
+  utmCampaign String?
+
+  country   String?
+  region    String?
+  city      String?
+  latitude  Float?
+  longitude Float?
+
+  deviceType  DeviceType @default(UNKNOWN)
+  browser     String?
+  os          String?
+  screenWidth Int?
+
+  timeOnPageSeconds  Int     @default(0)
+  scrollDepthPercent Int     @default(0)
+  isNewVisitor       Boolean @default(true)
+  userId             String?
+
+  createdAt DateTime @default(now())
+
+  post Post? @relation(fields: [postId], references: [id], onDelete: SetNull)
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+  @@index([postId, createdAt])
+  @@index([country, createdAt])
+  @@index([sessionId])
+  @@index([visitorId, createdAt])
+  @@index([path, createdAt])
+}
+
+/// Analytics session — distinct from the auth session, which is a JWT.
+model VisitSession {
+  id         String     @id @default(cuid())
+  visitorId  String
+  startedAt  DateTime   @default(now())
+  endedAt    DateTime?
+  pageCount  Int        @default(1)
+  entryPath  String
+  exitPath   String?
+  isBounce   Boolean    @default(true)
+  country    String?
+  region     String?
+  city       String?
+  deviceType DeviceType @default(UNKNOWN)
+  browser    String?
+  os         String?
+  source     String     @default("direct")
+  referrer   String?
+  userId     String?
+
+  @@index([startedAt])
+  @@index([visitorId, startedAt])
+  @@index([country, startedAt])
+  @@index([source, startedAt])
+}
+
+/// Nightly pre-aggregation. Dashboards read this; PageView is drill-down only.
+/// One row per (day, dimension, value) — e.g. (2026-08-23, 'country', 'NP').
+model DailyMetric {
+  id        String   @id @default(cuid())
+  day       DateTime @db.Date
+  dimension String
+  value     String
+
+  pageViews     Int @default(0)
+  visitors      Int @default(0)
+  sessions      Int @default(0)
+  bounces       Int @default(0)
+  totalDuration Int @default(0)
+  totalScroll   Int @default(0)
+  scrollSamples Int @default(0)
+  newVisitors   Int @default(0)
+
+  @@unique([day, dimension, value])
+  @@index([dimension, day])
+  @@index([day])
+}
+
+/// Optional one-question on-site poll. A *projected* demographic source,
+/// always reported with its sample size, never as a census.
+model SurveyResponse {
+  id          String   @id @default(cuid())
+  visitorId   String
+  questionKey String
+  answer      String
+  createdAt   DateTime @default(now())
+
+  @@unique([visitorId, questionKey])
+  @@index([questionKey, createdAt])
+}
+
+/// Modelled third-party panel figures (e.g. GA4 Demographics), imported in bulk.
+model PanelDemographic {
+  id          String            @id @default(cuid())
+  day         DateTime          @db.Date
+  questionKey String
+  bucket      String
+  share       Float
+  source      DemographicSource @default(PANEL)
+  provider    String            @default("ga4")
+
+  @@unique([day, questionKey, bucket, provider])
+  @@index([day])
+}
