@@ -6,18 +6,28 @@ import { getSettings } from '@/lib/site';
 
 const SOCIAL_LABELS: Record<string, string> = {
   x: 'X',
-  bluesky: 'Bluesky',
   youtube: 'YouTube',
   instagram: 'Instagram',
   tiktok: 'TikTok',
   facebook: 'Facebook',
-  rss: 'RSS',
 };
+
+/**
+ * Anything stored under a key that is no longer offered is ignored rather than
+ * rendered raw. Dropping a platform from the settings form does not delete the
+ * value that is already saved, and a footer link reading "bluesky" in lower
+ * case is worse than no link at all.
+ */
+function isSupported(key: string, href: string): boolean {
+  return Boolean(SOCIAL_LABELS[key]) && Boolean(href?.trim());
+}
 
 export async function SiteFooter() {
   const settings = await getSettings();
   const columns = settings['footer.columns'] ?? [];
-  const social = settings['social.links'] ?? {};
+  const social = Object.entries(settings['social.links'] ?? {}).filter(([key, href]) =>
+    isSupported(key, href),
+  );
 
   return (
     <footer className="mt-16 border-t border-border bg-surface">
@@ -30,21 +40,21 @@ export async function SiteFooter() {
             <h2 className="mt-8 text-xs font-bold uppercase tracking-widest text-fg">Subscribe</h2>
             <NewsletterForm source="footer" className="mt-3 max-w-sm" />
 
-            {Object.keys(social).length ? (
+            {social.length ? (
               <>
                 <h2 className="mt-8 text-xs font-bold uppercase tracking-widest text-fg">
                   Follow us
                 </h2>
                 <ul className="mt-3 flex flex-wrap gap-4">
-                  {Object.entries(social).map(([key, href]) => (
+                  {social.map(([key, href]) => (
                     <li key={key}>
                       <a
                         href={href}
                         className="text-sm text-muted transition-colors hover:text-accent"
-                        rel={key === 'rss' ? undefined : 'noreferrer noopener me'}
-                        target={key === 'rss' ? undefined : '_blank'}
+                        rel="noreferrer noopener me"
+                        target="_blank"
                       >
-                        {SOCIAL_LABELS[key] ?? key}
+                        {SOCIAL_LABELS[key]}
                       </a>
                     </li>
                   ))}

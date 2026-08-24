@@ -21,7 +21,9 @@ export type SettingsPayload = {
   footerColumns: { heading: string; links: { label: string; href: string }[] }[];
 };
 
-const SOCIAL_KEYS = ['x', 'bluesky', 'youtube', 'instagram', 'tiktok', 'facebook', 'rss'] as const;
+// Keep in step with SOCIAL_LABELS in the footer — a key offered here but not
+// labelled there renders as a raw lower-case slug.
+const SOCIAL_KEYS = ['x', 'youtube', 'instagram', 'tiktok', 'facebook'] as const;
 
 const MODULE_LABELS: Record<string, string> = {
   trending: 'Trending strip',
@@ -130,7 +132,7 @@ export function SettingsClient({
                 <Input
                   id={`social-${key}`}
                   value={draft.social[key] ?? ''}
-                  placeholder={key === 'rss' ? '/rss.xml' : `https://…`}
+                  placeholder="https://…"
                   onChange={(e) => set('social', { ...draft.social, [key]: e.target.value })}
                 />
               </Field>
