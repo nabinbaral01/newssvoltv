@@ -58,14 +58,25 @@ export function AccountForm({ profile }: { profile: Profile }) {
           </Field>
 
           <fieldset className="rounded-card border border-border bg-elevated p-4">
-            <legend className="px-1 text-xs font-bold uppercase tracking-widest text-muted">
+            {/* The background is what stops the fieldset's own border drawing
+                straight through the text — a legend sits in a notch in the
+                border, and without a matching fill the line shows behind it. */}
+            <legend className="ml-1 bg-elevated px-1.5 text-xs font-bold uppercase tracking-widest text-muted">
               Optional demographics
             </legend>
             <p className="mb-3 text-xs leading-relaxed text-muted">
               Our audience reports use only what readers volunteer here, and always show what
               share of the audience that represents. Clear any field to withdraw it.
             </p>
-            <div className="grid gap-3 sm:grid-cols-4">
+            {/*
+              Two columns before four. Four across at 640px squeezed each
+              select until its own value was clipped — "Not specifie" — and a
+              country list full of names like "United Kingdom" fares worse.
+
+              Birth year gets a fixed column because it holds four digits and
+              was being given the same width as City.
+            */}
+            <div className="grid gap-x-4 gap-y-3 sm:grid-cols-2 lg:grid-cols-[7rem_repeat(3,minmax(0,1fr))]">
               <Field label="Birth year" htmlFor="birthYear" error={state.fieldErrors?.birthYear}>
                 <Input
                   id="birthYear"
@@ -76,7 +87,7 @@ export function AccountForm({ profile }: { profile: Profile }) {
                   defaultValue={profile.birthYear ?? ''}
                 />
               </Field>
-              <Field label="Gender" htmlFor="gender">
+              <Field label="Gender" htmlFor="gender" className="min-w-0">
                 <Select id="gender" name="gender" defaultValue={profile.gender ?? ''}>
                   <option value="">Not specified</option>
                   <option value="FEMALE">Female</option>
@@ -85,7 +96,7 @@ export function AccountForm({ profile }: { profile: Profile }) {
                   <option value="PREFER_NOT_TO_SAY">Rather not answer</option>
                 </Select>
               </Field>
-              <Field label="Country" htmlFor="country">
+              <Field label="Country" htmlFor="country" className="min-w-0">
                 <Select id="country" name="country" defaultValue={profile.country ?? ''}>
                   <option value="">Not specified</option>
                   {COUNTRIES.map(([code, label]) => (
@@ -95,13 +106,13 @@ export function AccountForm({ profile }: { profile: Profile }) {
                   ))}
                 </Select>
               </Field>
-              <Field label="City" htmlFor="city">
+              <Field label="City" htmlFor="city" className="min-w-0">
                 <Input id="city" name="city" defaultValue={profile.city ?? ''} maxLength={80} />
               </Field>
             </div>
           </fieldset>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 border-t border-border pt-4">
             <Button type="submit" disabled={pending}>
               {pending ? <Loader2 className="size-4 animate-spin" aria-hidden /> : null}
               Save changes
