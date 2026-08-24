@@ -160,9 +160,11 @@ export function MegaMenu({ nav }: { nav: NavCategory[] }) {
         <div className="border-t border-border px-4 py-4">
           <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-x-6 gap-y-2 text-sm text-muted">
             <Link href="/search" onClick={() => setOpen(false)} className="hover:text-fg">Search</Link>
-            <Link href="/about/team" onClick={() => setOpen(false)} className="hover:text-fg">Our Team</Link>
+            {/* /about/team never existed and 404'd; the masthead lives at
+                /authors. RSS is dropped here for the same reason it went from
+                the footer — the feed still works for anyone subscribed. */}
+            <Link href="/authors" onClick={() => setOpen(false)} className="hover:text-fg">Our Team</Link>
             <Link href="/privacy" onClick={() => setOpen(false)} className="hover:text-fg">Privacy</Link>
-            <Link href="/rss.xml" onClick={() => setOpen(false)} className="hover:text-fg">RSS</Link>
           </div>
         </div>
       </div>
