@@ -1,10 +1,10 @@
 'use client';
 
-import { Check, Download, Loader2, Trash2 } from 'lucide-react';
+import { Check, Loader2 } from 'lucide-react';
 import * as React from 'react';
 import { toast } from 'sonner';
 
-import { deleteAccountAction, updateAccountAction, type AccountState } from './actions';
+import { updateAccountAction, type AccountState } from './actions';
 import { Button } from '@/components/ui/button';
 import { Field, Input, Select, Textarea } from '@/components/ui/field';
 import { Card, CardHeader } from '@/components/ui/surface';
@@ -34,11 +34,6 @@ export function AccountForm({ profile }: { profile: Profile }) {
     updateAccountAction,
     {},
   );
-  const [deleteState, deleteAction, deleting] = React.useActionState<AccountState, FormData>(
-    deleteAccountAction,
-    {},
-  );
-  const [confirmText, setConfirmText] = React.useState('');
 
   React.useEffect(() => {
     if (state.ok) toast.success('Account updated.');
@@ -120,54 +115,6 @@ export function AccountForm({ profile }: { profile: Profile }) {
         </form>
       </Card>
 
-      <Card>
-        <CardHeader
-          title="Your data"
-          description="Everything we hold about this account, in one file."
-        />
-        <div className="space-y-4 p-4">
-          <Button asChild variant="outline">
-            <a href="/api/account/export" download>
-              <Download className="size-4" aria-hidden /> Download my data (JSON)
-            </a>
-          </Button>
-
-          <div className="rounded-card border border-danger/30 bg-danger/5 p-4">
-            <h3 className="text-sm font-semibold text-danger">Delete account</h3>
-            <p className="mt-1 text-xs text-muted">
-              Permanently removes your account and demographic fields, detaches your comments and
-              unlinks every analytics row from you. This cannot be undone.
-            </p>
-            {deleteState.error ? (
-              <p className="mt-2 text-xs text-danger" role="alert">
-                {deleteState.error}
-              </p>
-            ) : null}
-            <form action={deleteAction} className="mt-3 flex flex-wrap items-end gap-2">
-              <Field label="Type DELETE to confirm" htmlFor="confirm" className="w-52">
-                <Input
-                  id="confirm"
-                  value={confirmText}
-                  onChange={(e) => setConfirmText(e.target.value)}
-                  placeholder="DELETE"
-                />
-              </Field>
-              <Button
-                type="submit"
-                variant="danger"
-                disabled={confirmText !== 'DELETE' || deleting}
-              >
-                {deleting ? (
-                  <Loader2 className="size-4 animate-spin" aria-hidden />
-                ) : (
-                  <Trash2 className="size-4" aria-hidden />
-                )}
-                Delete my account
-              </Button>
-            </form>
-          </div>
-        </div>
-      </Card>
     </div>
   );
 }
