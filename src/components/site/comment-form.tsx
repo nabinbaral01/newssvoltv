@@ -1,6 +1,7 @@
 'use client';
 
 import { Loader2 } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 import * as React from 'react';
 import { toast } from 'sonner';
 
@@ -11,11 +12,15 @@ export function CommentForm({
   postId,
   parentId,
   compact,
+  onPosted,
 }: {
   postId: string;
   parentId?: string;
   compact?: boolean;
+  /** Lets the thread pull the fresh list; see comment-thread.tsx. */
+  onPosted?: () => void;
 }) {
+  const router = useRouter();
   const [open, setOpen] = React.useState(!compact);
   const [busy, setBusy] = React.useState(false);
   const [body, setBody] = React.useState('');
@@ -46,7 +51,13 @@ export function CommentForm({
       if (!res.ok) throw new Error(data.error ?? 'Could not post that comment.');
       setBody('');
       if (compact) setOpen(false);
-      toast.success(data.message ?? 'Comment submitted for moderation.');
+      toast.success(data.message ?? 'Posted.');
+      // The comment is live the moment it is written, so it has to appear
+      // without a manual reload — otherwise "posted" looks like it failed.
+      // refresh() alone is not enough: the article route is ISR-cached and
+      // would serve the previous render back.
+      onPosted?.();
+      router.refresh();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Something went wrong.');
     } finally {
@@ -78,7 +89,9 @@ export function CommentForm({
             Cancel
           </Button>
         ) : null}
-        <span className="text-xs text-muted">Held for moderation before it appears.</span>
+        <span className="text-xs text-muted">
+          Posts straight away. Editors can remove anything that should not be here.
+        </span>
       </div>
     </form>
   );

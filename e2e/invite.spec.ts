@@ -23,7 +23,7 @@ test.describe('inviting a colleague', () => {
     await page.getByRole('button', { name: /Invite|Add/ }).first().click();
     // Wait for the dialog before typing — clicking a button that has not
     // hydrated yet opens nothing, and the failure looks like a missing field.
-    await expect(page.getByRole('button', { name: 'Send invitation' })).toBeVisible({
+    await expect(page.getByRole('button', { name: 'Send invitation', exact: true })).toBeVisible({
       timeout: 20_000,
     });
 
@@ -31,7 +31,7 @@ test.describe('inviting a colleague', () => {
     await page.getByLabel('Email').fill(email);
     // exact: every row behind the dialog has a select labelled "Role for X".
     await page.getByLabel('Role', { exact: true }).selectOption('AUTHOR');
-    await page.getByRole('button', { name: 'Send invitation' }).click();
+    await page.getByRole('button', { name: 'Send invitation', exact: true }).click();
 
     // No mail provider in the test environment, so the link is offered for
     // copying instead — which is the behaviour that matters when a send fails.
@@ -79,7 +79,7 @@ test.describe('inviting a colleague', () => {
     await page.getByRole('button', { name: /Invite|Add/ }).first().click();
     await page.getByLabel('Name').fill(`Replay ${stamp}`);
     await page.getByLabel('Email').fill(`replay.${stamp}@voltv.test`);
-    await page.getByRole('button', { name: 'Send invitation' }).click();
+    await page.getByRole('button', { name: 'Send invitation', exact: true }).click();
 
     const url = await page.getByLabel('Set-password link').inputValue();
     const path = new URL(url).pathname + new URL(url).search;
@@ -109,7 +109,7 @@ test.describe('inviting a colleague', () => {
     await page.getByRole('button', { name: /Invite|Add/ }).first().click();
     await page.getByLabel('Name').fill(name);
     await page.getByLabel('Email').fill(`reinvite.${stamp}@voltv.test`);
-    await page.getByRole('button', { name: 'Send invitation' }).click();
+    await page.getByRole('button', { name: 'Send invitation', exact: true }).click();
 
     const firstUrl = await page.getByLabel('Set-password link').inputValue();
     await page.keyboard.press('Escape');

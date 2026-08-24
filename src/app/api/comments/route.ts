@@ -1,9 +1,11 @@
+import { revalidatePath, revalidateTag } from 'next/cache';
 import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
 
 import { currentUser } from '@/lib/permissions';
 import { clientIp, hash } from '@/lib/analytics';
 import { prisma } from '@/lib/prisma';
+import { getApprovedComments, POSTS_TAG } from '@/lib/queries';
 import { rateLimit, tooManyRequests } from '@/lib/rate-limit';
 
 export const runtime = 'nodejs';
@@ -30,9 +32,10 @@ export async function POST(request: NextRequest) {
 
   const post = await prisma.post.findFirst({
     where: { id: parsed.data.postId, status: 'PUBLISHED', deletedAt: null },
-    select: { id: true },
+    select: { id: true, slug: true, category: { select: { slug: true } } },
   });
   if (!post) return NextResponse.json({ error: 'Post not found.' }, { status: 404 });
+  const postPath = post;
 
   // A reply must belong to the same post — otherwise a crafted parentId could
   // graft a thread onto an unrelated article.
@@ -44,13 +47,18 @@ export async function POST(request: NextRequest) {
     if (!parent) return NextResponse.json({ error: 'That thread no longer exists.' }, { status: 400 });
   }
 
+  // Published immediately. A queue nobody empties is worse than no queue —
+  // comments sit unseen for days, the thread dies, and people stop bothering.
+  // Moderation is after the fact: an editor removes or spams what should not
+  // be there. The rate limit above is what stands between the site and a
+  // flood, and it applies before anything is written.
   await prisma.comment.create({
     data: {
       postId: post.id,
       parentId: parsed.data.parentId ?? null,
       userId: user.id,
       body: parsed.data.body,
-      status: 'PENDING',
+      status: 'APPROVED',
     },
   });
 
@@ -64,5 +72,39 @@ export async function POST(request: NextRequest) {
     },
   });
 
-  return NextResponse.json({ message: 'Thanks — your comment is awaiting moderation.' });
+  // The article page caches its approved comments, so without this the author
+  // reloads and cannot see what they just wrote. A route handler is not a
+  // Server Action, so this is revalidateTag with a profile, not updateTag.
+  revalidateTag(POSTS_TAG, 'max');
+  revalidatePath(`/${postPath.category.slug}/${postPath.slug}`);
+
+  return NextResponse.json({ message: 'Posted.' });
+}
+
+/**
+ * The approved thread for one post.
+ *
+ * The article page is ISR-cached, which is right for an article and wrong for
+ * a comment someone just wrote: revalidatePath marks the page stale but the
+ * next request is still served the previous render, so the author reloads and
+ * their own comment is missing. Rather than make the busiest route on the site
+ * dynamic for everyone, the thread refetches itself here — only for the people
+ * who actually post something.
+ */
+export async function GET(request: NextRequest) {
+  const postId = request.nextUrl.searchParams.get('postId');
+  if (!postId) return NextResponse.json({ error: 'postId is required' }, { status: 400 });
+
+  const comments = await getApprovedComments(postId);
+
+  return NextResponse.json(
+    {
+      comments: comments.map((comment) => ({
+        ...comment,
+        createdAt: comment.createdAt.toISOString(),
+      })),
+    },
+    // Never cached: the whole point is to see what the cached page cannot show.
+    { headers: { 'Cache-Control': 'no-store' } },
+  );
 }

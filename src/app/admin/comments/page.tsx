@@ -11,8 +11,10 @@ export const dynamic = 'force-dynamic';
 type Props = { searchParams: Promise<{ status?: string }> };
 
 export default async function AdminCommentsPage({ searchParams }: Props) {
-  await requireCapability('comment.moderate');
-  const { status = 'PENDING' } = await searchParams;
+  const moderator = await requireCapability('comment.moderate');
+  // Comments publish on arrival, so the useful default is what is live on the
+  // site — not an empty queue.
+  const { status = 'APPROVED' } = await searchParams;
 
   const [comments, grouped] = await Promise.all([
     prisma.comment.findMany({
@@ -57,7 +59,12 @@ export default async function AdminCommentsPage({ searchParams }: Props) {
             : 'Nothing waiting. New comments are held until someone approves them.'
         }
       />
-      <CommentsClient comments={rows} status={status} counts={counts} />
+      <CommentsClient
+        comments={rows}
+        status={status}
+        counts={counts}
+        canDelete={moderator.role === 'ADMIN'}
+      />
     </>
   );
 }

@@ -1,12 +1,12 @@
 'use client';
 
-import { Check, Loader2, ShieldAlert, Trash2, Undo2 } from 'lucide-react';
+import { Loader2, ShieldAlert, Trash2, Undo2 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import * as React from 'react';
 import { toast } from 'sonner';
 
-import { moderateComments } from './actions';
+import { moderateComments, type ModerationAction } from './actions';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/field';
 import { StatusPill } from '@/components/ui/surface';
@@ -23,9 +23,13 @@ export type CommentRow = {
   isReply: boolean;
 };
 
+/**
+ * Comments publish on arrival, so there is no queue to work through — the
+ * default view is what readers can actually see. PENDING only ever appears
+ * for rows written before that change.
+ */
 const FILTERS = [
-  { key: 'PENDING', label: 'Pending' },
-  { key: 'APPROVED', label: 'Approved' },
+  { key: 'APPROVED', label: 'Live' },
   { key: 'SPAM', label: 'Spam' },
   { key: '', label: 'All' },
 ] as const;
@@ -34,10 +38,13 @@ export function CommentsClient({
   comments,
   status,
   counts,
+  canDelete,
 }: {
   comments: CommentRow[];
   status: string;
   counts: Record<string, number>;
+  /** Deleting is irreversible, so it is an administrator's call alone. */
+  canDelete: boolean;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -45,8 +52,15 @@ export function CommentsClient({
   const [selected, setSelected] = React.useState<Set<string>>(new Set());
   const [busy, setBusy] = React.useState(false);
 
-  const run = async (action: 'approve' | 'spam' | 'pending' | 'delete', ids: string[]) => {
-    if (action === 'delete' && !window.confirm(`Delete ${ids.length} comment(s)?`)) return;
+  const run = async (action: ModerationAction, ids: string[]) => {
+    if (
+      action === 'delete' &&
+      !window.confirm(
+        `Permanently delete ${ids.length} comment(s)? This cannot be undone — marking them as spam hides them and keeps the record.`,
+      )
+    ) {
+      return;
+    }
     setBusy(true);
     const result = await moderateComments(action, ids);
     setBusy(false);
@@ -54,7 +68,11 @@ export function CommentsClient({
       toast.error(result.error);
       return;
     }
-    toast.success(`${result.affected} comment(s) ${action === 'delete' ? 'deleted' : 'updated'}.`);
+    toast.success(
+      `${result.affected} comment(s) ${
+        action === 'delete' ? 'deleted' : action === 'spam' ? 'marked as spam' : 'restored'
+      }.`,
+    );
     setSelected(new Set());
     router.refresh();
   };
@@ -95,16 +113,18 @@ export function CommentsClient({
       {selected.size ? (
         <div role="status" className="flex flex-wrap items-center gap-2 rounded-card border border-accent/40 bg-accent/10 px-3 py-2 text-sm">
           <span className="font-medium">{selected.size} selected</span>
-          <Button size="sm" variant="secondary" onClick={() => run('approve', [...selected])} disabled={busy}>
-            <Check className="size-3.5" aria-hidden /> Approve
-          </Button>
           <Button size="sm" variant="secondary" onClick={() => run('spam', [...selected])} disabled={busy}>
-            <ShieldAlert className="size-3.5" aria-hidden /> Spam
+            <ShieldAlert className="size-3.5" aria-hidden /> Mark as spam
           </Button>
-          <Button size="sm" variant="danger" onClick={() => run('delete', [...selected])} disabled={busy}>
-            {busy ? <Loader2 className="size-3.5 animate-spin" aria-hidden /> : <Trash2 className="size-3.5" aria-hidden />}
-            Delete
+          <Button size="sm" variant="secondary" onClick={() => run('restore', [...selected])} disabled={busy}>
+            <Undo2 className="size-3.5" aria-hidden /> Restore
           </Button>
+          {canDelete ? (
+            <Button size="sm" variant="danger" onClick={() => run('delete', [...selected])} disabled={busy}>
+              {busy ? <Loader2 className="size-3.5 animate-spin" aria-hidden /> : <Trash2 className="size-3.5" aria-hidden />}
+              Delete
+            </Button>
+          ) : null}
         </div>
       ) : null}
 
@@ -155,45 +175,38 @@ export function CommentsClient({
               </div>
 
               <div className="flex shrink-0 flex-col gap-1">
-                {comment.status !== 'APPROVED' ? (
+                {comment.status === 'SPAM' ? (
                   <button
                     type="button"
-                    onClick={() => run('approve', [comment.id])}
+                    onClick={() => run('restore', [comment.id])}
                     className="rounded border border-border p-1.5 text-success hover:border-success"
-                    aria-label="Approve"
-                    title="Approve"
+                    aria-label="Restore"
+                    title="Restore to the site"
                   >
-                    <Check className="size-3.5" />
+                    <Undo2 className="size-3.5" />
                   </button>
                 ) : (
                   <button
                     type="button"
-                    onClick={() => run('pending', [comment.id])}
-                    className="rounded border border-border p-1.5 text-muted hover:border-accent hover:text-accent"
-                    aria-label="Return to pending"
-                    title="Return to pending"
+                    onClick={() => run('spam', [comment.id])}
+                    className="rounded border border-border p-1.5 text-warning hover:border-warning"
+                    aria-label="Mark as spam"
+                    title="Hide from the site — keeps the record"
                   >
-                    <Undo2 className="size-3.5" />
+                    <ShieldAlert className="size-3.5" />
                   </button>
                 )}
-                <button
-                  type="button"
-                  onClick={() => run('spam', [comment.id])}
-                  className="rounded border border-border p-1.5 text-warning hover:border-warning"
-                  aria-label="Mark as spam"
-                  title="Mark as spam"
-                >
-                  <ShieldAlert className="size-3.5" />
-                </button>
+                {canDelete ? (
                 <button
                   type="button"
                   onClick={() => run('delete', [comment.id])}
                   className="rounded border border-border p-1.5 text-danger hover:border-danger"
-                  aria-label="Delete"
-                  title="Delete"
+                  aria-label="Delete permanently"
+                  title="Delete permanently — marking as spam keeps the record"
                 >
                   <Trash2 className="size-3.5" />
                 </button>
+                ) : null}
               </div>
             </li>
           ))}
