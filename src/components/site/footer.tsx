@@ -13,20 +13,23 @@ const SOCIAL_LABELS: Record<string, string> = {
 };
 
 /**
- * Anything stored under a key that is no longer offered is ignored rather than
- * rendered raw. Dropping a platform from the settings form does not delete the
- * value that is already saved, and a footer link reading "bluesky" in lower
- * case is worse than no link at all.
+ * Only keys the site still offers are rendered. Dropping a platform from the
+ * settings form does not delete the value already saved, and a footer link
+ * reading "bluesky" in lower case is worse than no link at all.
+ *
+ * A platform with no URL yet is still listed. It is on the settings screen
+ * waiting to be filled in, and silently hiding it makes the footer look like
+ * the setting did not save.
  */
-function isSupported(key: string, href: string): boolean {
-  return Boolean(SOCIAL_LABELS[key]) && Boolean(href?.trim());
+function isSupported(key: string): boolean {
+  return Boolean(SOCIAL_LABELS[key]);
 }
 
 export async function SiteFooter() {
   const settings = await getSettings();
   const columns = settings['footer.columns'] ?? [];
-  const social = Object.entries(settings['social.links'] ?? {}).filter(([key, href]) =>
-    isSupported(key, href),
+  const social = Object.entries(settings['social.links'] ?? {}).filter(([key]) =>
+    isSupported(key),
   );
 
   return (
@@ -49,7 +52,7 @@ export async function SiteFooter() {
                   {social.map(([key, href]) => (
                     <li key={key}>
                       <a
-                        href={href}
+                        href={href || undefined}
                         className="text-sm text-muted transition-colors hover:text-accent"
                         rel="noreferrer noopener me"
                         target="_blank"
