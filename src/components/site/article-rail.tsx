@@ -1,11 +1,12 @@
 'use client';
 
 import { ReactionKind } from '@prisma/client';
-import { Bookmark, MessageSquare, ThumbsUp } from 'lucide-react';
+import { Bookmark, Check, MessageSquare, ThumbsUp, UserPlus } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import * as React from 'react';
 import { toast } from 'sonner';
 
+import { toggleFollowAction } from '@/app/(site)/author/follow-actions';
 import { toggleReactionAction } from '@/app/(site)/[category]/reaction-actions';
 import { cn } from '@/lib/utils';
 
@@ -24,12 +25,16 @@ import { cn } from '@/lib/utils';
  */
 export function ArticleRail({
   postId,
+  authorId,
+  authorName,
   initialLikes,
   commentCount,
   orientation = 'vertical',
   className,
 }: {
   postId: string;
+  authorId: string;
+  authorName: string;
   initialLikes: number;
   commentCount: number;
   orientation?: 'vertical' | 'horizontal';
@@ -39,17 +44,32 @@ export function ArticleRail({
   const [likes, setLikes] = React.useState(initialLikes);
   const [liked, setLiked] = React.useState(false);
   const [saved, setSaved] = React.useState(false);
+  const [following, setFollowing] = React.useState(false);
+  // Hidden until we know: showing "Follow" on your own article and then
+  // removing it a moment later is worse than showing it a moment late.
+  const [isAuthor, setIsAuthor] = React.useState<boolean | null>(null);
   const [pending, startTransition] = React.useTransition();
 
   React.useEffect(() => {
     let cancelled = false;
     fetch(`/api/posts/reactions?postId=${encodeURIComponent(postId)}`, { cache: 'no-store' })
       .then((res) => (res.ok ? res.json() : null))
-      .then((data: { liked?: boolean; saved?: boolean } | null) => {
-        if (cancelled || !data) return;
-        setLiked(Boolean(data.liked));
-        setSaved(Boolean(data.saved));
-      })
+      .then(
+        (
+          data: {
+            liked?: boolean;
+            saved?: boolean;
+            following?: boolean;
+            isAuthor?: boolean;
+          } | null,
+        ) => {
+          if (cancelled || !data) return;
+          setLiked(Boolean(data.liked));
+          setSaved(Boolean(data.saved));
+          setFollowing(Boolean(data.following));
+          setIsAuthor(Boolean(data.isAuthor));
+        },
+      )
       .catch(() => {
         // Not worth an error message: the buttons still work, they just start
         // from the neutral state.
@@ -107,6 +127,52 @@ export function ArticleRail({
     });
   }
 
+  function toggleFollow() {
+    const before = following;
+    setFollowing(!following);
+
+    startTransition(async () => {
+      const result = await toggleFollowAction(authorId);
+
+      if (result.needsSignIn || result.error) {
+        setFollowing(before);
+        if (result.needsSignIn) {
+          toast.info(result.error ?? 'Sign in to follow writers.', {
+            action: {
+              label: 'Sign in',
+              onClick: () => router.push(`/login?next=${encodeURIComponent(location.pathname)}`),
+            },
+          });
+        } else {
+          toast.error(result.error ?? 'Something went wrong.');
+        }
+        return;
+      }
+
+      setFollowing(Boolean(result.following));
+      toast.success(
+        result.following ? `Following ${authorName}.` : `Unfollowed ${authorName}.`,
+      );
+    });
+  }
+
+  /**
+   * Puts the cursor in the composer, not just the thread on screen.
+   *
+   * A jump link leaves the reader looking at other people's comments with one
+   * more scroll to go; the point of pressing this is to write something. If
+   * the box is not there — nobody is signed in — the scroll still happens and
+   * they land on the sign-in prompt, which is the right next step anyway.
+   */
+  function openComposer() {
+    document.getElementById('comments')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    const box = document.getElementById('comment-root');
+    if (box instanceof HTMLTextAreaElement) {
+      // After the smooth scroll settles, or focus fights it.
+      window.setTimeout(() => box.focus({ preventScroll: true }), 450);
+    }
+  }
+
   const vertical = orientation === 'vertical';
 
   const button = cn(
@@ -154,14 +220,35 @@ export function ArticleRail({
         <span className="text-[11px] text-muted">{saved ? 'Saved' : 'Save'}</span>
       </div>
 
+      {isAuthor === false ? (
+        <div className={cn('flex items-center', vertical ? 'flex-col gap-1' : 'gap-1.5')}>
+          <button
+            type="button"
+            onClick={toggleFollow}
+            disabled={pending}
+            aria-pressed={following}
+            aria-label={following ? `Unfollow ${authorName}` : `Follow ${authorName}`}
+            className={cn(button, following && 'border-accent text-accent')}
+          >
+            {following ? (
+              <Check className="size-5" aria-hidden />
+            ) : (
+              <UserPlus className="size-5" aria-hidden />
+            )}
+          </button>
+          <span className="text-[11px] text-muted">{following ? 'Following' : 'Follow'}</span>
+        </div>
+      ) : null}
+
       <div className={cn('flex items-center', vertical ? 'flex-col gap-1' : 'gap-1.5')}>
-        <a
-          href="#comments"
-          aria-label={`Jump to ${commentCount} ${commentCount === 1 ? 'comment' : 'comments'}`}
+        <button
+          type="button"
+          onClick={openComposer}
+          aria-label={`Write a comment (${commentCount} so far)`}
           className={button}
         >
           <MessageSquare className="size-5" aria-hidden />
-        </a>
+        </button>
         <span className="text-[11px] tabular-nums text-muted">{commentCount}</span>
       </div>
     </div>

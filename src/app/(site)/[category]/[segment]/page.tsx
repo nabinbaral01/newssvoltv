@@ -365,6 +365,8 @@ export default async function CategorySegmentPage({ params, searchParams }: Prop
           <div className="mt-4 xl:hidden">
             <ArticleRail
               postId={post.id}
+              authorId={post.author.id}
+              authorName={post.author.name}
               initialLikes={likeCount}
               commentCount={post._count.comments}
               orientation="horizontal"
@@ -425,6 +427,8 @@ export default async function CategorySegmentPage({ params, searchParams }: Prop
             <div className="sticky top-24">
               <ArticleRail
                 postId={post.id}
+                authorId={post.author.id}
+                authorName={post.author.name}
                 initialLikes={likeCount}
                 commentCount={post._count.comments}
               />

@@ -26,20 +26,38 @@ export async function GET(request: NextRequest) {
   const user = await currentUser();
   if (!user) {
     return NextResponse.json(
-      { liked: false, saved: false },
+      { liked: false, saved: false, following: false, isAuthor: false },
       { headers: { 'Cache-Control': 'no-store' } },
     );
   }
 
-  const rows = await prisma.postReaction.findMany({
-    where: { postId, userId: user.id },
-    select: { kind: true },
+  // The author is resolved from the post rather than taken from the query, so
+  // a crafted request cannot ask "am I following <someone else>" through here.
+  const post = await prisma.post.findUnique({
+    where: { id: postId },
+    select: { authorId: true },
   });
+
+  const [rows, follow] = await Promise.all([
+    prisma.postReaction.findMany({
+      where: { postId, userId: user.id },
+      select: { kind: true },
+    }),
+    post
+      ? prisma.follow.findUnique({
+          where: { followerId_authorId: { followerId: user.id, authorId: post.authorId } },
+          select: { id: true },
+        })
+      : null,
+  ]);
 
   return NextResponse.json(
     {
       liked: rows.some((r) => r.kind === ReactionKind.LIKE),
       saved: rows.some((r) => r.kind === ReactionKind.SAVE),
+      following: Boolean(follow),
+      // Nobody follows themselves, so the rail hides the control entirely.
+      isAuthor: post?.authorId === user.id,
     },
     // Per-reader, so it must never touch a shared cache.
     { headers: { 'Cache-Control': 'private, no-store' } },

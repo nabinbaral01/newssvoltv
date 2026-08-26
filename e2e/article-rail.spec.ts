@@ -71,13 +71,62 @@ test.describe('article rail', () => {
     await expect(like).toBeVisible();
   });
 
-  test('the comment button jumps to the thread', async ({ page }) => {
+  test('the comment button puts the cursor in the composer', async ({ page }) => {
+    await signIn(page, 'author');
     const href = await firstArticleHref(page);
     await page.goto(href);
 
-    const jump = page.locator('a[href="#comments"]:visible').first();
-    await expect(jump).toBeVisible({ timeout: 20_000 });
-    await jump.click();
-    await expect(page).toHaveURL(/#comments$/);
+    const write = page.locator('button[aria-label^="Write a comment"]:visible').first();
+    await expect(write).toBeVisible({ timeout: 20_000 });
+    await write.click();
+
+    // Landing on the thread is not enough — pressing this means "I want to
+    // write something", so the box has to be focused and ready to type.
+    const box = page.locator('#comment-root');
+    await expect(box).toBeFocused({ timeout: 15_000 });
+    await page.keyboard.type('typed straight into the box');
+    await expect(box).toHaveValue('typed straight into the box');
+  });
+
+  test('a reader can follow the writer from the rail', async ({ page }) => {
+    await signIn(page, 'author');
+    const href = await firstArticleHref(page);
+    await page.goto(href);
+
+    const follow = page.locator('button[aria-label^="Follow "]:visible').first();
+    await expect(follow).toBeVisible({ timeout: 20_000 });
+    await follow.click();
+
+    const unfollow = page.locator('button[aria-label^="Unfollow "]:visible').first();
+    await expect(unfollow).toBeVisible({ timeout: 15_000 });
+
+    // Survives a reload, and shows up where following is supposed to pay off.
+    await page.reload();
+    await expect(
+      page.locator('button[aria-label^="Unfollow "]:visible').first(),
+    ).toBeVisible({ timeout: 20_000 });
+
+    await page.goto('/account');
+    await expect(page.getByRole('heading', { name: 'Writers you follow' })).toBeVisible();
+
+    await page.goto(href);
+    await page.locator('button[aria-label^="Unfollow "]:visible').first().click();
+    await expect(
+      page.locator('button[aria-label^="Follow "]:visible').first(),
+    ).toBeVisible({ timeout: 15_000 });
+  });
+
+  test('the rail does not offer to follow yourself', async ({ page }) => {
+    // The e2e editor is the byline on the posts the publish tests create.
+    await signIn(page, 'editor');
+    const href = await firstArticleHref(page);
+    await page.goto(href);
+
+    await expect(page.locator('button[aria-label^="Like this story"]:visible').first()).toBeVisible({
+      timeout: 20_000,
+    });
+    // Give the state fetch time to land before asserting an absence.
+    await page.waitForTimeout(1500);
+    await expect(page.locator('button[aria-label="Follow E2E Editor"]')).toHaveCount(0);
   });
 });

@@ -6,6 +6,24 @@ import { signIn } from './helpers';
  * An invitation has to do two things: reach the person, and leave nothing
  * usable behind if it does not. Both are asserted here.
  */
+/**
+ * Opens the invite dialog, retrying the click.
+ *
+ * Playwright's actionability checks say nothing about whether React has
+ * attached its handler yet, so on a cold admin bundle the first click can land
+ * on a button that is visible, enabled and completely inert. Retrying until
+ * the dialog actually appears is the fix; a fixed sleep would only move the
+ * race.
+ */
+async function openInviteDialog(page: import('@playwright/test').Page) {
+  const send = page.getByRole('button', { name: 'Send invitation', exact: true });
+
+  await expect(async () => {
+    await page.getByRole('button', { name: 'Invite', exact: true }).click();
+    await expect(send).toBeVisible({ timeout: 2_000 });
+  }).toPass({ timeout: 30_000 });
+}
+
 test.describe('inviting a colleague', () => {
   // These walk the whole journey — invite, sign-in refusal, set password, sign
   // in for real — which is a lot of navigations against a dev server compiling
@@ -20,12 +38,7 @@ test.describe('inviting a colleague', () => {
     const name = `Invitee ${stamp}`;
     const email = `invitee.${stamp}@voltv.test`;
 
-    await page.getByRole('button', { name: /Invite|Add/ }).first().click();
-    // Wait for the dialog before typing — clicking a button that has not
-    // hydrated yet opens nothing, and the failure looks like a missing field.
-    await expect(page.getByRole('button', { name: 'Send invitation', exact: true })).toBeVisible({
-      timeout: 20_000,
-    });
+    await openInviteDialog(page);
 
     await page.getByLabel('Name').fill(name);
     await page.getByLabel('Email').fill(email);
@@ -76,7 +89,7 @@ test.describe('inviting a colleague', () => {
     await page.goto('/admin/users');
 
     const stamp = Date.now();
-    await page.getByRole('button', { name: /Invite|Add/ }).first().click();
+    await openInviteDialog(page);
     await page.getByLabel('Name').fill(`Replay ${stamp}`);
     await page.getByLabel('Email').fill(`replay.${stamp}@voltv.test`);
     await page.getByRole('button', { name: 'Send invitation', exact: true }).click();
@@ -106,7 +119,7 @@ test.describe('inviting a colleague', () => {
 
     const stamp = Date.now();
     const name = `Reinvite ${stamp}`;
-    await page.getByRole('button', { name: /Invite|Add/ }).first().click();
+    await openInviteDialog(page);
     await page.getByLabel('Name').fill(name);
     await page.getByLabel('Email').fill(`reinvite.${stamp}@voltv.test`);
     await page.getByRole('button', { name: 'Send invitation', exact: true }).click();
