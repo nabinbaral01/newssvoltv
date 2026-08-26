@@ -4,11 +4,12 @@ import { Check, Link2, Share2 } from 'lucide-react';
 import * as React from 'react';
 import { toast } from 'sonner';
 
+import { SocialIcon } from '@/components/site/social-icon';
+
 const TARGETS = [
   { key: 'x', label: 'X', href: (u: string, t: string) => `https://x.com/intent/post?url=${u}&text=${t}` },
   { key: 'facebook', label: 'Facebook', href: (u: string) => `https://www.facebook.com/sharer/sharer.php?u=${u}` },
   { key: 'reddit', label: 'Reddit', href: (u: string, t: string) => `https://www.reddit.com/submit?url=${u}&title=${t}` },
-  { key: 'bluesky', label: 'Bluesky', href: (u: string, t: string) => `https://bsky.app/intent/compose?text=${t}%20${u}` },
 ];
 
 export function ShareButtons({ url, title }: { url: string; title: string }) {
@@ -45,8 +46,12 @@ export function ShareButtons({ url, title }: { url: string; title: string }) {
           href={target.href(encodedUrl, encodedTitle)}
           target="_blank"
           rel="noreferrer noopener"
-          className="rounded-full border border-border px-3 py-1 text-xs font-medium transition-colors hover:border-accent hover:text-accent"
+          className="inline-flex items-center gap-1.5 rounded-full border border-border px-3 py-1 text-xs font-medium transition-colors hover:border-accent hover:text-accent"
         >
+          {/* The mark carries the recognition, the word carries the meaning —
+              a share bar is a row of choices, so dropping the labels here
+              would make the reader decode five glyphs to pick one. */}
+          <SocialIcon name={target.key} className="size-3.5" />
           {target.label}
         </a>
       ))}
