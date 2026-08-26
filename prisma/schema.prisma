@@ -26,6 +26,14 @@ enum Gender {
   PREFER_NOT_TO_SAY
 }
 
+/// A reader's one-bit reactions to an article. One enum, one table: LIKE and
+/// SAVE have identical shape and lifecycle, and a third would otherwise mean a
+/// third table.
+enum ReactionKind {
+  LIKE
+  SAVE
+}
+
 enum PostStatus {
   DRAFT
   IN_REVIEW
@@ -94,21 +102,39 @@ model User {
   country   String?
   city      String?
 
-  accounts     Account[]
-  resetTokens  PasswordResetToken[]
-  posts        Post[]               @relation("PostAuthor")
-  deletedPosts Post[]               @relation("PostDeletedBy")
-  revisions    PostRevision[]
-  comments     Comment[]
-  media        MediaAsset[]
-  auditLogs    AuditLog[]
-  pageViews    PageView[]
-  followers    Follow[]             @relation("AuthorFollowers")
-  following    Follow[]             @relation("ReaderFollowing")
+  accounts      Account[]
+  resetTokens   PasswordResetToken[]
+  posts         Post[]               @relation("PostAuthor")
+  deletedPosts  Post[]               @relation("PostDeletedBy")
+  revisions     PostRevision[]
+  comments      Comment[]
+  media         MediaAsset[]
+  auditLogs     AuditLog[]
+  pageViews     PageView[]
+  followers     Follow[]             @relation("AuthorFollowers")
+  following     Follow[]             @relation("ReaderFollowing")
+  postReactions PostReaction[]
 
   @@index([role])
   @@index([createdAt])
   @@index([staffOrder])
+}
+
+/// A like or a save. The unique triple makes a double-tap a no-op rather than
+/// a second row — the same guarantee Follow relies on.
+model PostReaction {
+  id        String       @id @default(cuid())
+  postId    String
+  userId    String
+  kind      ReactionKind
+  createdAt DateTime     @default(now())
+
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, userId, kind])
+  @@index([postId, kind])
+  @@index([userId, kind])
 }
 
 /// A reader following a writer.
@@ -264,6 +290,7 @@ model Post {
   comments    Comment[]
   revisions   PostRevision[]
   pageViews   PageView[]
+  reactions   PostReaction[]
 
   @@index([status, publishedAt])
   @@index([categoryId, status, publishedAt])

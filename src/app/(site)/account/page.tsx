@@ -5,7 +5,7 @@ import { redirect } from 'next/navigation';
 import { AccountForm } from './account-form';
 import { AvatarPicker } from '@/components/avatar-picker';
 import { bylineTitle, initials } from '@/lib/byline';
-import { getFollowedAuthors } from '@/lib/queries';
+import { getFollowedAuthors, getSavedPosts } from '@/lib/queries';
 import { currentUser } from '@/lib/permissions';
 import { prisma } from '@/lib/prisma';
 import { formatDate } from '@/lib/utils';
@@ -37,7 +37,10 @@ export default async function AccountPage() {
   });
   if (!user) redirect('/login');
 
-  const following = await getFollowedAuthors(session.id);
+  const [following, savedPosts] = await Promise.all([
+    getFollowedAuthors(session.id),
+    getSavedPosts(session.id),
+  ]);
 
   const canAdmin = ['ADMIN', 'EDITOR', 'AUTHOR'].includes(user.role);
 
@@ -71,6 +74,38 @@ export default async function AccountPage() {
         <div className="mt-4">
           <AvatarPicker name={user.name} image={user.image} />
         </div>
+      </section>
+
+      {/* Saving has to lead somewhere, or the bookmark button is a control
+          that files a fact away and never mentions it again. */}
+      <section className="mt-6 rounded-card border border-border bg-surface p-4">
+        <h2 className="text-sm font-semibold">Saved stories</h2>
+        <p className="mt-0.5 text-xs text-muted">
+          {savedPosts.length
+            ? 'Tap the bookmark on any article to add it here.'
+            : 'Nothing saved yet — tap the bookmark beside an article to keep it.'}
+        </p>
+        {savedPosts.length ? (
+          <ul className="mt-4 divide-y divide-border">
+            {savedPosts.map((post) => (
+              <li key={post.id} className="py-3">
+                <p className="text-[11px] font-semibold uppercase tracking-widest text-muted">
+                  {post.category.name}
+                </p>
+                <Link
+                  href={`/${post.category.slug}/${post.slug}`}
+                  className="text-sm font-medium hover:text-accent"
+                >
+                  {post.title}
+                </Link>
+                <p className="text-xs text-muted">
+                  By {post.author.name}
+                  {post.publishedAt ? ` · ${formatDate(post.publishedAt)}` : ''}
+                </p>
+              </li>
+            ))}
+          </ul>
+        ) : null}
       </section>
 
       {following.length ? (

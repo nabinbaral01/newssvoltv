@@ -1,4 +1,4 @@
-import { Prisma, PostStatus, Role } from '@prisma/client';
+import { Prisma, PostStatus, ReactionKind, Role } from '@prisma/client';
 import { unstable_cache } from 'next/cache';
 
 import { prisma } from './prisma';
@@ -280,6 +280,9 @@ export const articleSelect = {
       socialLinks: true,
     },
   },
+  // The rail shows a comment count beside the jump link; without this it would
+  // need its own query per article view.
+  _count: { select: { comments: { where: { status: 'APPROVED' } } } },
 } satisfies Prisma.PostSelect;
 
 export type Article = Prisma.PostGetPayload<{ select: typeof articleSelect }>;
@@ -534,6 +537,35 @@ export const getAuthorStats = cachedQuery(
   ['author-stats'],
   { tags: [POSTS_TAG, STAFF_TAG], revalidate: 600 },
 );
+
+/**
+ * Like count for an article.
+ *
+ * Cached and tagged like the article itself. The viewer's *own* like is
+ * deliberately not here: it is per-reader, and baking it into an ISR-cached
+ * page would show one reader's state to everybody. The rail fetches that part
+ * for itself.
+ */
+export const getLikeCount = cachedQuery(
+  async (postId: string): Promise<number> =>
+    prisma.postReaction.count({ where: { postId, kind: ReactionKind.LIKE } }),
+  ['post-likes'],
+  { tags: [POSTS_TAG], revalidate: 120 },
+);
+
+/** Articles a reader has saved, newest first. For /account. */
+export async function getSavedPosts(userId: string) {
+  const saved = await prisma.postReaction.findMany({
+    where: { userId, kind: ReactionKind.SAVE, post: publishedWhere() },
+    orderBy: { createdAt: 'desc' },
+    take: 30,
+    select: {
+      createdAt: true,
+      post: { select: postCardSelect },
+    },
+  });
+  return saved.map((row) => row.post);
+}
 
 /** Whether the signed-in reader already follows this writer. */
 export async function isFollowing(followerId: string, authorId: string): Promise<boolean> {

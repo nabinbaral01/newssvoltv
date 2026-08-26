@@ -6,6 +6,7 @@ import { notFound } from 'next/navigation';
 
 import { ArchiveView, Pagination } from '@/components/site/archive-view';
 import { ArticleBody } from '@/components/site/article-body';
+import { ArticleRail } from '@/components/site/article-rail';
 import { AuthorCard } from '@/components/site/author-card';
 import { Comments } from '@/components/site/comments';
 import { GridCard } from '@/components/site/post-card';
@@ -17,6 +18,7 @@ import {
   getArchive,
   getArticle,
   getMoreFromSection,
+  getLikeCount,
   getRelatedPosts,
 } from '@/lib/queries';
 import { SITE_URL } from '@/lib/site';
@@ -216,9 +218,12 @@ export default async function CategorySegmentPage({ params, searchParams }: Prop
   const post = await getArticle(segment, categorySlug);
   if (!post) notFound();
 
-  const [related, sectionPosts] = await Promise.all([
+  const [related, sectionPosts, likeCount] = await Promise.all([
     getRelatedPosts(post.id, post.categoryId, post.tags.map((t) => t.slug)),
     getMoreFromSection(post.categoryId, post.id, 8),
+    // Cached and tagged like the article. Only the count is shared; whether
+    // this particular reader liked it is resolved inside the rail.
+    getLikeCount(post.id),
   ]);
 
   const url = `${SITE_URL}/${categorySlug}/${post.slug}`;
@@ -301,7 +306,15 @@ export default async function CategorySegmentPage({ params, searchParams }: Prop
       </header>
 
       <div className="mx-auto grid max-w-7xl gap-10 px-4 py-8 lg:grid-cols-[minmax(0,1fr)_20rem]">
-        <div className="min-w-0 max-w-3xl">
+        {/*
+          The prose is capped at max-w-3xl but its grid track is wider, so the
+          slack to its right is where the rail lives — no overlap with the
+          sidebar and no fixed positioning to fight the layout. Below xl there
+          is no slack, so the same control renders as a horizontal row under
+          the byline instead of being hidden.
+        */}
+        <div className="flex min-w-0 gap-6">
+        <div className="min-w-0 max-w-3xl flex-1">
           {post.excerpt ? (
             <p className="text-lg leading-relaxed text-muted">{post.excerpt}</p>
           ) : null}
@@ -347,6 +360,15 @@ export default async function CategorySegmentPage({ params, searchParams }: Prop
                 <Eye className="size-3.5" aria-hidden /> {compactNumber(post.viewCount)}
               </span>
             </div>
+          </div>
+
+          <div className="mt-4 xl:hidden">
+            <ArticleRail
+              postId={post.id}
+              initialLikes={likeCount}
+              commentCount={post._count.comments}
+              orientation="horizontal"
+            />
           </div>
 
           {post.rating != null ? (
@@ -395,6 +417,19 @@ export default async function CategorySegmentPage({ params, searchParams }: Prop
           ) : null}
 
           <Comments postId={post.id} />
+        </div>
+
+          {/* Sticky beside the prose from xl up, where the grid track is wide
+              enough to hold it without narrowing the text. */}
+          <div className="hidden xl:block">
+            <div className="sticky top-24">
+              <ArticleRail
+                postId={post.id}
+                initialLikes={likeCount}
+                commentCount={post._count.comments}
+              />
+            </div>
+          </div>
         </div>
 
         {/* Sticky "more from this section" rail. */}
