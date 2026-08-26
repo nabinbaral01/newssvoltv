@@ -40,16 +40,6 @@ export default async function LoginPage({
       <div className="mt-8">
         <LoginForm googleEnabled={GOOGLE_ENABLED} next={safeNext} />
       </div>
-
-      <div className="mt-8 rounded-card border border-border bg-surface p-4 text-xs text-muted">
-        <p className="font-semibold text-fg">Demo accounts</p>
-        <p className="mt-1">
-          Editor-in-chief: <code>mara.delacroix@voltv.example</code> / <code>volt-admin-2026</code>
-        </p>
-        <p>
-          Author: <code>theo.marchetti@voltv.example</code> / <code>volt-admin-2026</code>
-        </p>
-      </div>
     </div>
   );
 }
