@@ -1,6 +1,7 @@
 import Link from 'next/link';
 
 import { NewsletterForm } from '@/components/site/newsletter-form';
+import { SocialIcon } from '@/components/site/social-icon';
 import { Wordmark } from '@/components/site/wordmark';
 import { getSettings } from '@/lib/site';
 
@@ -48,16 +49,21 @@ export async function SiteFooter() {
                 <h2 className="mt-8 text-xs font-bold uppercase tracking-widest text-fg">
                   Follow us
                 </h2>
-                <ul className="mt-3 flex flex-wrap gap-4">
+                <ul className="mt-3 flex flex-wrap gap-2">
                   {social.map(([key, href]) => (
                     <li key={key}>
+                      {/* The name moves to aria-label so the mark is not read
+                          twice, and the tap target stays 40px square — an icon
+                          on its own is well under what a thumb can hit. */}
                       <a
                         href={href || undefined}
-                        className="text-sm text-muted transition-colors hover:text-accent"
+                        aria-label={SOCIAL_LABELS[key]}
+                        title={SOCIAL_LABELS[key]}
+                        className="grid size-10 place-items-center rounded-md border border-border text-muted transition-colors hover:border-accent hover:text-accent focus-visible:border-accent"
                         rel="noreferrer noopener me"
                         target="_blank"
                       >
-                        {SOCIAL_LABELS[key]}
+                        <SocialIcon name={key} />
                       </a>
                     </li>
                   ))}
