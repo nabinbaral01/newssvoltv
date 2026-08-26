@@ -89,13 +89,9 @@ export async function SiteFooter() {
           </div>
         </div>
 
-        <div className="mt-12 flex flex-col gap-2 border-t border-border pt-6 text-xs text-muted sm:flex-row sm:items-center sm:justify-between">
+        <div className="mt-12 border-t border-border pt-6 text-center text-xs text-muted">
           <p>
             © {new Date().getFullYear()} {settings['site.name']}. All rights reserved.
-          </p>
-          <p>
-            Every property covered on this site is fictional — Volt V is a demonstration
-            publication.
           </p>
         </div>
       </div>
