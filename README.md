@@ -21,13 +21,7 @@ npm run seed              # ~130 posts, 15 writers, ~46k page views
 npm run dev               # http://localhost:3000
 ```
 
-Sign in at `/login` with:
 
-| Role | Email | Password |
-|------|-------|----------|
-| Editor-in-chief (ADMIN) | `nabin@1.com` | `1234` |
-| Editor | `nabin@1.com` | `12345` |
-| Author | `nabin@12.com` | `123456` |
 
 ### The local database
 
