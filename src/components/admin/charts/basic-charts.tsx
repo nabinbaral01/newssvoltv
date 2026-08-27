@@ -47,7 +47,32 @@ export function DonutChart({
   centreLabel?: string;
 }) {
   const total = data.reduce((sum, slice) => sum + slice.value, 0);
-  const slices = data.slice(0, SERIES.length);
+  const slices = data.slice(0, SERIES.length).filter((slice) => slice.value > 0);
+
+  if (!total || !slices.length) {
+    return <p className="py-8 text-center text-sm text-muted">No data in this period</p>;
+  }
+
+  /*
+   * One category is not a part-to-whole. A ring at 100% carries no comparison,
+   * and drawing it as an arc leaves a seam where the ends meet that reads as a
+   * missing slice — the chart implies a second category that does not exist.
+   * The number is the chart here.
+   */
+  if (slices.length === 1) {
+    const only = slices[0];
+    return (
+      <div className="flex flex-col items-center gap-1 py-6 text-center">
+        <p className="text-4xl font-semibold tabular-nums">{compactNumber(only.value)}</p>
+        <p className="text-sm text-muted">
+          {centreLabel ?? 'total'} — all {only.label.toLowerCase()}
+        </p>
+        <p className="mt-1 text-xs text-muted">
+          Only one category has answered, so there is nothing to compare yet.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col items-center gap-4 sm:flex-row">
@@ -118,12 +143,15 @@ export function BarList({
   emptyLabel?: string;
   className?: string;
 }) {
-  if (!data.length) {
+  const total = data.reduce((sum, row) => sum + row.value, 0);
+
+  // Seven bands all reading 0 is not a distribution, it is the absence of one.
+  // Listing them anyway invites the reader to compare bars that mean nothing.
+  if (!data.length || total === 0) {
     return <p className={cn('py-6 text-center text-sm text-muted', className)}>{emptyLabel}</p>;
   }
 
   const max = Math.max(...data.map((row) => row.value), 1);
-  const total = data.reduce((sum, row) => sum + row.value, 0);
 
   return (
     <ul className={cn('space-y-2.5', className)}>
@@ -143,11 +171,19 @@ export function BarList({
               </span>
             </div>
             <div className="mt-1 h-2 w-full overflow-hidden rounded-full bg-elevated">
-              <div
-                className="h-full rounded-full"
-                style={{ width: `${Math.max(1.5, (row.value / max) * 100)}%`, background: colour }}
-                role="presentation"
-              />
+              {/* A zero draws nothing. The old floor of 1.5% gave every empty
+                  band a visible stub, so a category with no data looked like a
+                  category with a little — the one thing a bar must never do. */}
+              {row.value > 0 ? (
+                <div
+                  className="h-full rounded-full"
+                  style={{
+                    width: `${Math.max(1.5, (row.value / max) * 100)}%`,
+                    background: colour,
+                  }}
+                  role="presentation"
+                />
+              ) : null}
             </div>
           </li>
         );
