@@ -22,7 +22,7 @@ export type SiteSettings = {
 };
 
 export const DEFAULT_SETTINGS: SiteSettings = {
-  'site.name': 'Volt V',
+  'site.name': 'The Volt V',
   'site.tagline': 'Screens, panels and controllers — covered properly.',
   'site.logo': '',
   'site.description':
