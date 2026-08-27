@@ -23,6 +23,8 @@ import { cn } from '@/lib/utils';
  * than a skeleton: they are usable immediately, and the only cost of a late
  * correction is a filled icon appearing a moment later.
  */
+type Control = 'like' | 'save' | 'follow';
+
 export function ArticleRail({
   postId,
   authorId,
@@ -48,7 +50,29 @@ export function ArticleRail({
   // Hidden until we know: showing "Follow" on your own article and then
   // removing it a moment later is worse than showing it a moment late.
   const [isAuthor, setIsAuthor] = React.useState<boolean | null>(null);
-  const [pending, startTransition] = React.useTransition();
+
+  /**
+   * Controls the reader has already pressed.
+   *
+   * The state fetch below starts on mount and can land *after* a fast click.
+   * Without this it would overwrite that click with the state from before it —
+   * the like is saved, but the button snaps back to unliked and looks broken.
+   * Once a control is touched, the reader's own action is the truth for it.
+   */
+  const touched = React.useRef(new Set<Control>());
+
+  /**
+   * Per-control, not one shared flag. A single useTransition meant one request
+   * in flight disabled all three buttons, so liking and then immediately
+   * following did nothing at all.
+   */
+  const [busy, setBusy] = React.useState<Record<Control, boolean>>({
+    like: false,
+    save: false,
+    follow: false,
+  });
+  const setBusyFor = (control: Control, value: boolean) =>
+    setBusy((current) => ({ ...current, [control]: value }));
 
   React.useEffect(() => {
     let cancelled = false;
@@ -64,9 +88,10 @@ export function ArticleRail({
           } | null,
         ) => {
           if (cancelled || !data) return;
-          setLiked(Boolean(data.liked));
-          setSaved(Boolean(data.saved));
-          setFollowing(Boolean(data.following));
+          // Only fill in what the reader has not already decided for herself.
+          if (!touched.current.has('like')) setLiked(Boolean(data.liked));
+          if (!touched.current.has('save')) setSaved(Boolean(data.saved));
+          if (!touched.current.has('follow')) setFollowing(Boolean(data.following));
           setIsAuthor(Boolean(data.isAuthor));
         },
       )
@@ -79,9 +104,24 @@ export function ArticleRail({
     };
   }, [postId]);
 
+  function signInPrompt(message: string) {
+    toast.info(message, {
+      action: {
+        label: 'Sign in',
+        onClick: () => router.push(`/login?next=${encodeURIComponent(location.pathname)}`),
+      },
+    });
+  }
+
   function toggle(kind: ReactionKind) {
+    const control: Control = kind === ReactionKind.LIKE ? 'like' : 'save';
     const wasLike = kind === ReactionKind.LIKE;
     const before = { liked, saved, likes };
+
+    // Marked before the request, not after: a state fetch landing mid-flight
+    // must not undo what the reader just pressed.
+    touched.current.add(control);
+    setBusyFor(control, true);
 
     // Optimistic: a spinner on a one-bit change reads as broken.
     if (wasLike) {
@@ -91,69 +131,64 @@ export function ArticleRail({
       setSaved(!saved);
     }
 
-    startTransition(async () => {
-      const result = await toggleReactionAction(postId, kind);
+    void (async () => {
+      try {
+        const result = await toggleReactionAction(postId, kind);
 
-      if (result.needsSignIn || result.error) {
-        // Roll back state *and* count together, so a refusal never leaves a
-        // wrong number on screen.
-        setLiked(before.liked);
-        setSaved(before.saved);
-        setLikes(before.likes);
+        if (result.needsSignIn || result.error) {
+          // Roll back state *and* count together, so a refusal never leaves a
+          // wrong number on screen.
+          setLiked(before.liked);
+          setSaved(before.saved);
+          setLikes(before.likes);
+          touched.current.delete(control);
 
-        if (result.needsSignIn) {
-          toast.info(result.error ?? 'Sign in first.', {
-            action: {
-              label: 'Sign in',
-              onClick: () =>
-                router.push(`/login?next=${encodeURIComponent(location.pathname)}`),
-            },
-          });
-        } else {
-          toast.error(result.error ?? 'Something went wrong.');
+          if (result.needsSignIn) signInPrompt(result.error ?? 'Sign in first.');
+          else toast.error(result.error ?? 'Something went wrong.');
+          return;
         }
-        return;
-      }
 
-      // Trust the server's count over the guess — someone else may have liked
-      // it in the meantime.
-      if (wasLike) {
-        setLiked(Boolean(result.active));
-        if (typeof result.count === 'number') setLikes(result.count);
-      } else {
-        setSaved(Boolean(result.active));
-        toast.success(result.active ? 'Saved to your account.' : 'Removed from saved.');
+        // Trust the server's count over the guess — someone else may have
+        // liked it in the meantime.
+        if (wasLike) {
+          setLiked(Boolean(result.active));
+          if (typeof result.count === 'number') setLikes(result.count);
+          toast.success(result.active ? 'Liked.' : 'Like removed.');
+        } else {
+          setSaved(Boolean(result.active));
+          toast.success(result.active ? 'Saved to your account.' : 'Removed from saved.');
+        }
+      } finally {
+        setBusyFor(control, false);
       }
-    });
+    })();
   }
 
   function toggleFollow() {
     const before = following;
+
+    touched.current.add('follow');
+    setBusyFor('follow', true);
     setFollowing(!following);
 
-    startTransition(async () => {
-      const result = await toggleFollowAction(authorId);
+    void (async () => {
+      try {
+        const result = await toggleFollowAction(authorId);
 
-      if (result.needsSignIn || result.error) {
-        setFollowing(before);
-        if (result.needsSignIn) {
-          toast.info(result.error ?? 'Sign in to follow writers.', {
-            action: {
-              label: 'Sign in',
-              onClick: () => router.push(`/login?next=${encodeURIComponent(location.pathname)}`),
-            },
-          });
-        } else {
-          toast.error(result.error ?? 'Something went wrong.');
+        if (result.needsSignIn || result.error) {
+          setFollowing(before);
+          touched.current.delete('follow');
+          if (result.needsSignIn) signInPrompt(result.error ?? 'Sign in to follow writers.');
+          else toast.error(result.error ?? 'Something went wrong.');
+          return;
         }
-        return;
-      }
 
-      setFollowing(Boolean(result.following));
-      toast.success(
-        result.following ? `Following ${authorName}.` : `Unfollowed ${authorName}.`,
-      );
-    });
+        setFollowing(Boolean(result.following));
+        toast.success(result.following ? `Following ${authorName}.` : `Unfollowed ${authorName}.`);
+      } finally {
+        setBusyFor('follow', false);
+      }
+    })();
   }
 
   /**
@@ -175,11 +210,13 @@ export function ArticleRail({
 
   const vertical = orientation === 'vertical';
 
+  // active:scale gives the press an answer in the same frame as the tap,
+  // before any request has left the browser.
   const button = cn(
-    'group grid place-items-center rounded-full border transition-colors',
+    'grid place-items-center rounded-full border transition-all duration-150',
     'size-11 border-border bg-surface text-muted',
     'hover:border-accent hover:text-accent focus-visible:border-accent',
-    'disabled:opacity-60',
+    'active:scale-90 disabled:opacity-60',
   );
 
   return (
@@ -194,7 +231,7 @@ export function ArticleRail({
         <button
           type="button"
           onClick={() => toggle(ReactionKind.LIKE)}
-          disabled={pending}
+          disabled={busy.like}
           aria-pressed={liked}
           aria-label={liked ? 'Remove your like' : 'Like this story'}
           className={cn(button, liked && 'border-accent text-accent')}
@@ -210,7 +247,7 @@ export function ArticleRail({
         <button
           type="button"
           onClick={() => toggle(ReactionKind.SAVE)}
-          disabled={pending}
+          disabled={busy.save}
           aria-pressed={saved}
           aria-label={saved ? 'Remove from saved' : 'Save this story'}
           className={cn(button, saved && 'border-accent text-accent')}
@@ -225,7 +262,7 @@ export function ArticleRail({
           <button
             type="button"
             onClick={toggleFollow}
-            disabled={pending}
+            disabled={busy.follow}
             aria-pressed={following}
             aria-label={following ? `Unfollow ${authorName}` : `Follow ${authorName}`}
             className={cn(button, following && 'border-accent text-accent')}
