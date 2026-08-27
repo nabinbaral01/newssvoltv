@@ -273,9 +273,13 @@ Or push to GitHub and import the repo in the Vercel dashboard.
 
 - **Google sign-in**: add `https://your-app.vercel.app/api/auth/callback/google`
   to the OAuth client's authorised redirect URIs.
-- **Email**: verify a domain at resend.com/domains. The sandbox sender only
-  delivers to the Resend account owner, so password reset silently fails for
-  everyone else.
+- **Email**: two drivers, SMTP first when both are set. SMTP costs nothing and
+  sends to anyone — Gmail needs an app password, not the account password. The
+  Resend path needs a verified domain at resend.com/domains: its shared
+  `onboarding@resend.dev` sender only delivers to the Resend account owner, so
+  invitations and password resets to anyone else are refused. That is an
+  anti-abuse rule, not a billing limit, and a paid plan does not lift it. Users
+  & roles states which driver is live and where mail will land.
 - **Cron**: `vercel.json` ships a Hobby-compatible single nightly job. Hobby
   allows two jobs at daily frequency, so scheduled posts go live on the nightly
   pass rather than within five minutes. On Pro, copy `vercel.pro.json` over
@@ -305,9 +309,12 @@ including that it stays silent before consent and under GPC.
 - **Rate limiting is in-process.** Fine for one instance; swap the `Map` in
   `src/lib/rate-limit.ts` for Redis on a multi-instance deploy. The call sites
   do not change.
-- **Invites print a temporary password** rather than emailing it. Wire an ESP into
-  `inviteUserAction` and the newsletter double opt-in — both already generate and
-  store their tokens.
+- **Mail needs a driver before it leaves the building.** With neither SMTP nor
+  Resend configured, invitations and resets are printed to the server log
+  instead of sent, and the admin screen offers the link to copy by hand. That is
+  deliberate — the flows work end to end on a laptop with no account and no
+  network — but it means a fresh deploy sends nothing until `SMTP_*` or
+  `RESEND_API_KEY` is set.
 - **`npm audit` reports a dev-only advisory** in the Prisma CLI's transitive
   `deepmerge-ts`. It is not in the runtime dependency graph.
 - **Seeded cover art is procedural SVG**, which is why `dangerouslyAllowSVG` is on
