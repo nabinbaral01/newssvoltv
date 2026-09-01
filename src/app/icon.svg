@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="The Volt V">
+  <!-- The wordmark's accent "V" on the site background: the only part of the
+       lockup that survives being shrunk to 16px in a browser tab or a search
+       result. Drawn narrow and tall to echo Khand, the headline face, rather
+       than reading as a generic chevron. The two colours are the bg and accent
+       tokens from globals.css, hard-coded because this file is a static asset,
+       not rendered by the app. -->
+  <rect width="64" height="64" rx="13" fill="#141414"/>
+  <path fill="#00e88f" d="M16 13h9.22L32 29.09 38.78 13H48L32 51Z"/>
+</svg>
