@@ -1,9 +1,11 @@
+import { Home } from 'lucide-react';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
 import { AccountForm } from './account-form';
 import { AvatarPicker } from '@/components/avatar-picker';
+import { Button } from '@/components/ui/button';
 import { bylineTitle, initials } from '@/lib/byline';
 import { getFollowedAuthors, getSavedPosts } from '@/lib/queries';
 import { currentUser } from '@/lib/permissions';
@@ -47,7 +49,16 @@ export default async function AccountPage() {
   return (
     <div className="mx-auto max-w-3xl px-4 py-10">
       <header className="border-b-2 border-accent pb-4">
-        <h1 className="headline text-4xl uppercase">Your account</h1>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h1 className="headline text-4xl uppercase">Your account</h1>
+          {/* A reader who just signed up lands here; give them an obvious way
+              back to the stories rather than relying on the small wordmark. */}
+          <Button asChild variant="outline" size="sm">
+            <Link href="/">
+              <Home className="size-4" aria-hidden /> Visit site
+            </Link>
+          </Button>
+        </div>
         <p className="mt-1 text-sm text-muted">
           Member since {formatDate(user.createdAt)} · {user._count.comments}{' '}
           {user._count.comments === 1 ? 'comment' : 'comments'}
