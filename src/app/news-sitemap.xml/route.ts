@@ -14,6 +14,7 @@ import { SITE_URL } from '@/lib/site';
 export const dynamic = 'force-dynamic';
 
 const WINDOW_MS = 2 * 24 * 60 * 60 * 1000;
+const FALLBACK_COUNT = 5;
 
 function escapeXml(value: string): string {
   return value
@@ -30,9 +31,13 @@ export async function GET() {
   } as never as Awaited<ReturnType<typeof getSitemapEntries>>);
 
   const cutoff = Date.now() - WINDOW_MS;
-  const recent = posts
-    .filter((p) => p.publishedAt && p.publishedAt.getTime() >= cutoff)
-    .slice(0, 1000);
+  const published = posts.filter((p) => p.publishedAt);
+  const inWindow = published.filter((p) => p.publishedAt!.getTime() >= cutoff);
+  // Search Console reports a sitemap with no <url> as an error. On a quiet
+  // couple of days, list the newest few stories instead: Google simply skips
+  // news entries older than two days, so they cost nothing and keep the file
+  // valid until the next story lands.
+  const recent = (inWindow.length ? inWindow : published.slice(0, FALLBACK_COUNT)).slice(0, 1000);
 
   const urls = recent
     .map(
