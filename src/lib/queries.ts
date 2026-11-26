@@ -163,9 +163,13 @@ export const getTrending = cachedQuery(
       where: { ...publishedWhere(), isTrending: true },
       orderBy: byNewest,
       take: 10,
-      select: { title: true, slug: true, category: { select: { slug: true } } },
+      select: {
+        title: true,
+        slug: true,
+        category: { select: { slug: true, name: true, colour: true } },
+      },
     }),
-  ['trending'],
+  ['trending-v2'],
   { tags: [POSTS_TAG], revalidate: 300 },
 );
 
