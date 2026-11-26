@@ -1,4 +1,5 @@
 import { ArrowDown } from 'lucide-react';
+import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { NewsletterForm } from '@/components/site/newsletter-form';
@@ -13,11 +14,24 @@ import {
   getMostRead,
   getNavigation,
 } from '@/lib/queries';
-import { getSettings } from '@/lib/site';
+import { JsonLd } from '@/components/site/json-ld';
+import { organizationJsonLd, openGraph, SITE_NAME } from '@/lib/seo';
+import { getSettings, SITE_URL } from '@/lib/site';
 
 // The shop window is rebuilt on publish (tag revalidation) and at worst every
 // two minutes — never per request.
 export const revalidate = 120;
+
+const HOME_TITLE = 'The Volt V — Film, TV, Comics, Gaming & Anime News and Reviews';
+const HOME_DESCRIPTION =
+  'Entertainment news, reviews and rankings across film, television, comics, gaming and anime — reported and written by named critics.';
+
+export const metadata: Metadata = {
+  title: { absolute: HOME_TITLE },
+  description: HOME_DESCRIPTION,
+  alternates: { canonical: '/' },
+  openGraph: openGraph({ type: 'website', url: '/', title: HOME_TITLE, description: HOME_DESCRIPTION }),
+};
 
 async function CategoryBlock({ slug }: { slug: string }) {
   const block = await getCategoryBlock(slug, 4);
@@ -73,11 +87,33 @@ export default async function HomePage() {
     ? categoryModules.map((m) => m.split(':')[1])
     : nav.map((c) => c.slug);
 
+  const sameAs = Object.values(settings['social.links'] ?? {}).filter(Boolean);
+  const jsonLd = {
+    '@context': 'https://schema.org',
+    '@graph': [
+      organizationJsonLd(sameAs, settings['site.logo'] || undefined),
+      {
+        '@type': 'WebSite',
+        '@id': `${SITE_URL}/#website`,
+        name: SITE_NAME,
+        alternateName: 'Volt V',
+        url: SITE_URL,
+        description: HOME_DESCRIPTION,
+        inLanguage: 'en-GB',
+        publisher: { '@id': `${SITE_URL}/#organization` },
+      },
+    ],
+  };
+
   return (
     <>
+      <JsonLd data={jsonLd} />
       {modules.includes('trending') ? <TrendingStrip /> : null}
 
       <div className="mx-auto max-w-7xl px-4 py-6">
+        {/* The masthead is a logo, so the page's one H1 is for crawlers and
+            screen readers: it names the site and what it covers. */}
+        <h1 className="sr-only">{HOME_TITLE}</h1>
         {/* Hero split: one big story, the LATEST rail alongside it. */}
         {top.hero ? (
           <section className="grid gap-6 lg:grid-cols-3">

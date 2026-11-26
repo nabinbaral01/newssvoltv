@@ -5,7 +5,16 @@ import { notFound } from 'next/navigation';
 import { ArchiveView, Pagination } from '@/components/site/archive-view';
 import { buildSafe } from '@/lib/build-safe';
 import { prisma } from '@/lib/prisma';
-import { getArchive, getNavigation } from '@/lib/queries';
+import { JsonLd } from '@/components/site/json-ld';
+import { countArchivePages, getArchive, getNavigation } from '@/lib/queries';
+import {
+  archiveRobots,
+  breadcrumbJsonLd,
+  openGraph,
+  paginated,
+  parsePage,
+  SITE_NAME,
+} from '@/lib/seo';
 
 export const revalidate = 300;
 
@@ -31,15 +40,26 @@ export async function generateStaticParams() {
   }, []);
 }
 
-export async function generateMetadata({ params }: Props): Promise<Metadata> {
+export async function generateMetadata({ params, searchParams }: Props): Promise<Metadata> {
   const { category: slug } = await params;
   const category = await loadCategory(slug);
   if (!category) return {};
+  const page = parsePage((await searchParams).page);
+  const { title, canonical } = paginated(
+    `/${category.slug}`,
+    page,
+    `${category.name} News, Reviews & Features`,
+  );
+  const description =
+    category.description ??
+    `The latest ${category.name.toLowerCase()} news, reviews, rankings and features from The Volt V.`;
+  const { total, pages } = await countArchivePages({ categorySlug: slug });
   return {
-    title: category.name,
-    description: category.description ?? `${category.name} coverage from Volt V.`,
-    alternates: { canonical: `/${category.slug}` },
-    openGraph: { title: `${category.name} | The Volt V`, type: 'website' },
+    title,
+    description,
+    alternates: { canonical },
+    robots: archiveRobots(total, page, pages),
+    openGraph: openGraph({ type: 'website', url: canonical, title: `${title} | ${SITE_NAME}`, description }),
   };
 }
 
@@ -91,6 +111,12 @@ export default async function CategoryPage({ params, searchParams }: Props) {
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-8">
+      <JsonLd
+        data={breadcrumbJsonLd([
+          { name: 'Home', path: '/' },
+          { name: category.name, path: `/${category.slug}` },
+        ])}
+      />
       <header className="border-b-2 pb-4" style={{ borderColor: category.colour }}>
         <h1 className="headline text-4xl uppercase sm:text-6xl">{category.name}</h1>
         {category.description ? (

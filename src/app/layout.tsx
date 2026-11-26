@@ -3,6 +3,7 @@ import { Inter, Khand } from 'next/font/google';
 import { Toaster } from 'sonner';
 
 import { ThemeProvider } from '@/components/theme-provider';
+import { openGraph } from '@/lib/seo';
 import { SITE_URL } from '@/lib/site';
 import './globals.css';
 
@@ -31,20 +32,31 @@ export const metadata: Metadata = {
   },
   description:
     'The Volt V is an entertainment publication covering film, television, comics, gaming and anime with reporting, reviews and rankings.',
-  openGraph: {
-    type: 'website',
-    siteName: 'The Volt V',
-    locale: 'en_GB',
-  },
+  openGraph: openGraph({ type: 'website' }),
   twitter: { card: 'summary_large_image', site: '@voltv' },
   alternates: { types: { 'application/rss+xml': '/rss.xml' } },
-  robots: { index: true, follow: true },
+  robots: {
+    index: true,
+    follow: true,
+    // Lets Google show full-width images and full snippets in Discover and
+    // Top Stories — the default allows only a thumbnail.
+    'max-image-preview': 'large',
+    'max-snippet': -1,
+    'max-video-preview': -1,
+    googleBot: {
+      index: true,
+      follow: true,
+      'max-image-preview': 'large',
+      'max-snippet': -1,
+      'max-video-preview': -1,
+    },
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html
-      lang="en"
+      lang="en-GB"
       suppressHydrationWarning
       // Tells the router that the smooth scroll in globals.css is deliberate,
       // so route transitions jump instantly instead of animating the whole page.

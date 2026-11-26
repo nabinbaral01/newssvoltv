@@ -380,16 +380,30 @@ export type ArchiveQuery = {
   perPage?: number;
 };
 
-export async function getArchive(query: ArchiveQuery) {
-  const perPage = query.perPage ?? 24;
-  const page = Math.max(1, query.page ?? 1);
-  const where: Prisma.PostWhereInput = {
+function archiveWhere(query: ArchiveQuery): Prisma.PostWhereInput {
+  return {
     ...publishedWhere(),
     ...(query.categorySlug ? { category: { slug: query.categorySlug } } : {}),
     ...(query.contentTypeSlug ? { contentType: { slug: query.contentTypeSlug } } : {}),
     ...(query.tagSlug ? { tags: { some: { slug: query.tagSlug } } } : {}),
     ...(query.authorSlug ? { author: { slug: query.authorSlug } } : {}),
   };
+}
+
+/**
+ * Page count for an archive, without fetching its cards. Metadata uses it to
+ * keep empty and out-of-range archive pages out of the search index.
+ */
+export async function countArchivePages(query: ArchiveQuery) {
+  const perPage = query.perPage ?? 24;
+  const total = await prisma.post.count({ where: archiveWhere(query) });
+  return { total, pages: Math.max(1, Math.ceil(total / perPage)) };
+}
+
+export async function getArchive(query: ArchiveQuery) {
+  const perPage = query.perPage ?? 24;
+  const page = Math.max(1, query.page ?? 1);
+  const where = archiveWhere(query);
 
   const [posts, total] = await Promise.all([
     prisma.post.findMany({
@@ -700,9 +714,12 @@ export const getSitemapEntries = cachedQuery(
         where: publishedWhere(),
         select: {
           slug: true,
+          title: true,
           updatedAt: true,
           publishedAt: true,
+          coverImage: true,
           category: { select: { slug: true } },
+          contentType: { select: { slug: true } },
         },
         orderBy: { publishedAt: 'desc' },
         take: 40_000,

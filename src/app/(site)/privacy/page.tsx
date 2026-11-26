@@ -5,6 +5,7 @@ export const metadata: Metadata = {
   title: 'Privacy policy',
   description:
     'Exactly what Volt V collects, why, how long it is kept and how to get it back or have it deleted.',
+  alternates: { canonical: '/privacy' },
 };
 
 /**

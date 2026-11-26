@@ -3,7 +3,9 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 
 import { ArchiveView, Pagination } from '@/components/site/archive-view';
-import { getArchive, getPopularTags, getTagBySlug } from '@/lib/queries';
+import { JsonLd } from '@/components/site/json-ld';
+import { countArchivePages, getArchive, getPopularTags, getTagBySlug } from '@/lib/queries';
+import { archiveRobots, breadcrumbJsonLd, openGraph, paginated, parsePage } from '@/lib/seo';
 
 export const revalidate = 300;
 
@@ -12,14 +14,20 @@ type Props = {
   searchParams: Promise<{ page?: string }>;
 };
 
-export async function generateMetadata({ params }: Props): Promise<Metadata> {
+export async function generateMetadata({ params, searchParams }: Props): Promise<Metadata> {
   const { slug } = await params;
   const tag = await getTagBySlug(slug);
   if (!tag) return {};
+  const page = parsePage((await searchParams).page);
+  const { title, canonical } = paginated(`/tag/${tag.slug}`, page, `${tag.name}: Latest News & Reviews`);
+  const description = `Every Volt V story about ${tag.name} — news, reviews and features, newest first. ${tag.useCount} ${tag.useCount === 1 ? 'story' : 'stories'} so far.`;
+  const { total, pages } = await countArchivePages({ tagSlug: slug });
   return {
-    title: tag.name,
-    description: `${tag.useCount} stories tagged ${tag.name}.`,
-    alternates: { canonical: `/tag/${tag.slug}` },
+    title,
+    description,
+    alternates: { canonical },
+    robots: archiveRobots(total, page, pages),
+    openGraph: openGraph({ type: 'website', url: canonical, title, description }),
   };
 }
 
@@ -38,6 +46,12 @@ export default async function TagPage({ params, searchParams }: Props) {
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-8">
+      <JsonLd
+        data={breadcrumbJsonLd([
+          { name: 'Home', path: '/' },
+          { name: tag.name, path: `/tag/${tag.slug}` },
+        ])}
+      />
       <header className="border-b-2 border-accent pb-4">
         <p className="text-xs font-bold uppercase tracking-widest text-muted">Topic</p>
         <h1 className="headline text-4xl uppercase sm:text-6xl">{tag.name}</h1>

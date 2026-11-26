@@ -4,14 +4,20 @@ import Link from 'next/link';
 import { bylineTitle, initials, STAFF_GROUPS } from '@/lib/byline';
 import { buildSafe } from '@/lib/build-safe';
 import { getStaffDirectory } from '@/lib/queries';
+import { JsonLd } from '@/components/site/json-ld';
+import { openGraph } from '@/lib/seo';
 import { SITE_URL } from '@/lib/site';
 
 export const revalidate = 600;
 
+const DESCRIPTION =
+  'The editors, critics and writers behind The Volt V — who they are, what they cover and everything they have published.';
+
 export const metadata: Metadata = {
   title: 'Our writers',
-  description: 'The editors and writers behind Volt V — who they are and what they cover.',
+  description: DESCRIPTION,
   alternates: { canonical: '/authors' },
+  openGraph: openGraph({ type: 'website', url: '/authors', title: 'Our writers', description: DESCRIPTION }),
 };
 
 export default async function AuthorsPage() {
@@ -43,10 +49,7 @@ export default async function AuthorsPage() {
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-8">
-      <script
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
-      />
+      <JsonLd data={jsonLd} />
 
       <header className="border-b-2 border-accent pb-6">
         <h1 className="headline text-4xl uppercase sm:text-6xl">Our writers</h1>

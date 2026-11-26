@@ -3,6 +3,7 @@ import type { Metadata } from 'next';
 export const metadata: Metadata = {
   title: 'Terms of use',
   description: 'The terms that apply to reading and commenting on Volt V.',
+  alternates: { canonical: '/terms' },
 };
 
 export default function TermsPage() {

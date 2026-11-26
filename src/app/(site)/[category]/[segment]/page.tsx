@@ -15,12 +15,25 @@ import { SectionHeading } from '@/components/ui/surface';
 import { buildSafe } from '@/lib/build-safe';
 import { prisma } from '@/lib/prisma';
 import {
+  countArchivePages,
   getArchive,
   getArticle,
   getMoreFromSection,
   getLikeCount,
   getRelatedPosts,
 } from '@/lib/queries';
+import { JsonLd } from '@/components/site/json-ld';
+import {
+  absoluteUrl,
+  archiveRobots,
+  breadcrumbJsonLd,
+  DEFAULT_OG_IMAGE,
+  openGraph,
+  organizationJsonLd,
+  paginated,
+  parsePage,
+  plural,
+} from '@/lib/seo';
 import { SITE_URL } from '@/lib/site';
 import { bylineTitle, initials } from '@/lib/byline';
 import { compactNumber, formatDateTime, relativeTime } from '@/lib/utils';
@@ -78,16 +91,26 @@ export async function generateStaticParams() {
   }, []);
 }
 
-export async function generateMetadata({ params }: Props): Promise<Metadata> {
+export async function generateMetadata({ params, searchParams }: Props): Promise<Metadata> {
   const { category: categorySlug, segment } = await params;
 
   const archive = await resolveContentType(categorySlug, segment);
   if (archive) {
-    const title = `${archive.category.name} ${archive.contentType.name}s`;
+    const page = parsePage((await searchParams).page);
+    const basePath = `/${categorySlug}/${segment}`;
+    const { title, canonical } = paginated(
+      basePath,
+      page,
+      `${archive.category.name} ${plural(archive.contentType.name)}`,
+    );
+    const description = `Every ${archive.contentType.name.toLowerCase()} we have published in ${archive.category.name} — the latest first.`;
+    const { total, pages } = await countArchivePages({ categorySlug, contentTypeSlug: segment });
     return {
       title,
-      description: `Every ${archive.contentType.name.toLowerCase()} we have published in ${archive.category.name}.`,
-      alternates: { canonical: `/${categorySlug}/${segment}` },
+      description,
+      alternates: { canonical },
+      robots: archiveRobots(total, page, pages),
+      openGraph: openGraph({ type: 'website', url: canonical, title, description }),
     };
   }
 
@@ -96,29 +119,34 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
   const url = `${SITE_URL}/${categorySlug}/${post.slug}`;
   const image = post.ogImage ?? post.coverImage ?? undefined;
+  const title = post.metaTitle ?? post.title;
+  const description = post.metaDescription ?? post.excerpt ?? undefined;
 
   return {
-    title: post.metaTitle ?? post.title,
-    description: post.metaDescription ?? post.excerpt ?? undefined,
+    title,
+    description,
     alternates: { canonical: `/${categorySlug}/${post.slug}` },
     authors: [{ name: post.author.name, url: `${SITE_URL}/author/${post.author.slug}` }],
-    openGraph: {
+    keywords: post.tags.map((t) => t.name),
+    openGraph: openGraph({
       type: 'article',
       url,
-      title: post.metaTitle ?? post.title,
-      description: post.metaDescription ?? post.excerpt ?? undefined,
+      title,
+      description,
       publishedTime: post.publishedAt?.toISOString(),
       modifiedTime: post.updatedAt.toISOString(),
-      authors: [post.author.name],
+      authors: [`${SITE_URL}/author/${post.author.slug}`],
       section: post.category.name,
       tags: post.tags.map((t) => t.name),
-      images: image ? [{ url: image, width: 1600, height: 900, alt: post.coverAlt ?? post.title }] : undefined,
-    },
+      images: image
+        ? [{ url: absoluteUrl(image), width: 1600, height: 900, alt: post.coverAlt ?? post.title }]
+        : undefined,
+    }),
     twitter: {
       card: 'summary_large_image',
-      title: post.metaTitle ?? post.title,
-      description: post.metaDescription ?? post.excerpt ?? undefined,
-      images: image ? [image] : undefined,
+      title,
+      description,
+      images: image ? [absoluteUrl(image)] : undefined,
     },
   };
 }
@@ -168,6 +196,13 @@ async function FormatArchive({
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-8">
+      <JsonLd
+        data={breadcrumbJsonLd([
+          { name: 'Home', path: '/' },
+          { name: resolved.category.name, path: `/${categorySlug}` },
+          { name: plural(resolved.contentType.name), path: `/${categorySlug}/${segment}` },
+        ])}
+      />
       <nav aria-label="Breadcrumb" className="text-xs uppercase tracking-widest text-muted">
         <Link href={`/${categorySlug}`} className="hover:text-accent">
           {resolved.category.name}
@@ -178,7 +213,7 @@ async function FormatArchive({
 
       <header className="mt-2 border-b-2 pb-4" style={{ borderColor: resolved.category.colour }}>
         <h1 className="headline text-4xl uppercase sm:text-6xl">
-          {resolved.category.name} {resolved.contentType.name}s
+          {resolved.category.name} {plural(resolved.contentType.name)}
         </h1>
         <p className="mt-2 text-sm text-muted">
           {archive.total} {archive.total === 1 ? 'story' : 'stories'}
@@ -228,29 +263,38 @@ export default async function CategorySegmentPage({ params, searchParams }: Prop
 
   const url = `${SITE_URL}/${categorySlug}/${post.slug}`;
 
+  const heroImage = post.ogImage ?? post.coverImage;
+
   // NewsArticle schema. Google reads this; so does every social preview crawler.
+  // Stored images may already be absolute storage URLs, so they go through
+  // absoluteUrl rather than having the site origin glued on the front.
   const jsonLd = {
     '@context': 'https://schema.org',
     '@type': 'NewsArticle',
-    headline: post.title,
+    '@id': `${url}#article`,
+    headline: post.title.slice(0, 110),
     description: post.metaDescription ?? post.excerpt ?? undefined,
-    image: post.ogImage ?? post.coverImage ? [`${SITE_URL}${post.ogImage ?? post.coverImage}`] : undefined,
+    image: heroImage ? [absoluteUrl(heroImage)] : [absoluteUrl(DEFAULT_OG_IMAGE.url)],
     datePublished: post.publishedAt?.toISOString(),
     dateModified: post.updatedAt.toISOString(),
     articleSection: post.category.name,
     keywords: post.tags.map((t) => t.name).join(', '),
     wordCount: post.bodyText.split(/\s+/).filter(Boolean).length,
+    inLanguage: 'en-GB',
+    isAccessibleForFree: true,
     author: {
       '@type': 'Person',
       name: post.author.name,
+      jobTitle: bylineTitle(post.author),
       url: `${SITE_URL}/author/${post.author.slug}`,
     },
-    publisher: {
-      '@type': 'Organization',
-      name: 'The Volt V',
-      url: SITE_URL,
-    },
+    publisher: organizationJsonLd(),
     mainEntityOfPage: { '@type': 'WebPage', '@id': url },
+    ...(post._count.comments
+      ? {
+          commentCount: post._count.comments,
+        }
+      : {}),
     ...(post.rating != null
       ? {
           review: {
@@ -264,9 +308,17 @@ export default async function CategorySegmentPage({ params, searchParams }: Prop
 
   return (
     <article>
-      <script
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+      <JsonLd data={jsonLd} />
+      <JsonLd
+        data={breadcrumbJsonLd([
+          { name: 'Home', path: '/' },
+          { name: post.category.name, path: `/${post.category.slug}` },
+          {
+            name: post.contentType.name,
+            path: `/${post.category.slug}/${post.contentType.slug}`,
+          },
+          { name: post.title, path: `/${post.category.slug}/${post.slug}` },
+        ])}
       />
 
       {/* Full-bleed hero with the headline sitting on the scrim. */}

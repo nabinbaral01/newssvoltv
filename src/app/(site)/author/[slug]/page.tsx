@@ -8,6 +8,8 @@ import { FollowButton } from '@/components/site/follow-button';
 import { bylineTitle, initials, socialLabel } from '@/lib/byline';
 import { currentUser } from '@/lib/permissions';
 import { getArchive, getAuthorBeats, getAuthorBySlug, isFollowing } from '@/lib/queries';
+import { JsonLd } from '@/components/site/json-ld';
+import { absoluteUrl, breadcrumbJsonLd, openGraph, paginated, parsePage } from '@/lib/seo';
 import { SITE_URL } from '@/lib/site';
 import { formatDate } from '@/lib/utils';
 
@@ -19,20 +21,30 @@ type Props = {
   searchParams: Promise<{ page?: string }>;
 };
 
-export async function generateMetadata({ params }: Props): Promise<Metadata> {
+export async function generateMetadata({ params, searchParams }: Props): Promise<Metadata> {
   const { slug } = await params;
   const author = await getAuthorBySlug(slug);
   if (!author || author.role === Role.READER) return {};
+  const page = parsePage((await searchParams).page);
+  const { title, canonical } = paginated(
+    `/author/${author.slug}`,
+    page,
+    `${author.name} — ${bylineTitle(author)}`,
+  );
+  const description =
+    author.bio?.slice(0, 300) ?? `Every story ${author.name} has written for The Volt V.`;
   return {
-    title: `${author.name} — ${bylineTitle(author)}`,
-    description: author.bio ?? `Stories by ${author.name} for Volt V.`,
-    alternates: { canonical: `/author/${author.slug}` },
-    openGraph: {
+    title,
+    description,
+    alternates: { canonical },
+    openGraph: openGraph({
       title: author.name,
-      description: author.bio ?? undefined,
+      description,
+      url: canonical,
       type: 'profile',
-      images: author.image ? [author.image] : undefined,
-    },
+      images: author.image ? [absoluteUrl(author.image)] : undefined,
+    }),
+    twitter: { card: 'summary' },
   };
 }
 
@@ -85,7 +97,7 @@ export default async function AuthorPage({ params, searchParams }: Props) {
       name: author.name,
       jobTitle: bylineTitle(author),
       description: author.bio ?? undefined,
-      image: author.image ? `${SITE_URL}${author.image}` : undefined,
+      image: author.image ? absoluteUrl(author.image) : undefined,
       url: `${SITE_URL}/author/${author.slug}`,
       knowsAbout: beats.map((beat) => beat.name),
       sameAs: Object.values(social),
@@ -99,9 +111,13 @@ export default async function AuthorPage({ params, searchParams }: Props) {
 
   return (
     <div>
-      <script
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+      <JsonLd data={jsonLd} />
+      <JsonLd
+        data={breadcrumbJsonLd([
+          { name: 'Home', path: '/' },
+          { name: 'Our writers', path: '/authors' },
+          { name: author.name, path: `/author/${author.slug}` },
+        ])}
       />
 
       {/* A colour band rather than a photographic banner: it needs nothing
