@@ -32,19 +32,19 @@ export default async function SearchPage({ searchParams }: Props) {
         <label htmlFor="q" className="sr-only">
           Search Volt V
         </label>
-        <div className="flex h-11 flex-1 items-center gap-2 rounded-md border border-border bg-elevated px-3 focus-within:border-accent">
+        <div className="flex h-11 min-w-0 flex-1 items-center gap-2 rounded-md border border-border bg-elevated px-3 focus-within:border-accent">
           <Search className="size-4 shrink-0 text-muted" aria-hidden />
           <input
             id="q"
             name="q"
             defaultValue={term}
             placeholder="Try a franchise, a studio or a topic…"
-            className="h-full flex-1 bg-transparent text-base outline-none placeholder:text-muted"
+            className="h-full min-w-0 flex-1 bg-transparent text-base outline-none placeholder:text-muted"
           />
         </div>
         <button
           type="submit"
-          className="h-11 rounded-md bg-accent px-5 text-sm font-semibold text-accent-fg hover:opacity-90"
+          className="h-11 shrink-0 rounded-md bg-accent px-5 text-sm font-semibold text-accent-fg hover:opacity-90"
         >
           Search
         </button>

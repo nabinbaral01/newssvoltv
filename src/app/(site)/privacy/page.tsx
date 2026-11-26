@@ -126,13 +126,13 @@ export default function PrivacyPage() {
             .
           </li>
           <li>
-            How Google uses information from sites that use its services is explained at{' '}
+            Google explains how it uses information from sites that use its services in{' '}
             <a
               href="https://policies.google.com/technologies/partner-sites"
               rel="noopener noreferrer"
               target="_blank"
             >
-              policies.google.com/technologies/partner-sites
+              How Google uses information from sites or apps that use our services
             </a>
             .
           </li>

@@ -60,8 +60,11 @@ async function EditorPicks() {
   return (
     <section className="mt-10">
       <SectionHeading title="Editor's Picks" href="/search?q=" moreLabel="Browse all" />
-      {/* Carousel on small screens, grid once there is room for four across. */}
-      <ul className="no-scrollbar -mx-4 flex snap-x snap-mandatory gap-5 overflow-x-auto px-4 lg:mx-0 lg:grid lg:grid-cols-4 lg:px-0">
+      {/* Carousel on small screens, grid once there is room for four across.
+          `relative` is load-bearing: the cards' screen-reader labels are
+          absolutely positioned, and without a positioned ancestor inside the
+          scroller they escape its clipping and widen the whole page on phones. */}
+      <ul className="no-scrollbar relative -mx-4 flex snap-x snap-mandatory gap-5 overflow-x-auto px-4 lg:mx-0 lg:grid lg:grid-cols-4 lg:px-0">
         {picks.slice(0, 8).map((post) => (
           <li key={post.id} className="w-[78vw] shrink-0 snap-start sm:w-[44vw] lg:w-auto">
             <GridCard post={post} sizes="(max-width: 1024px) 78vw, 25vw" />

@@ -127,7 +127,7 @@ export default async function CategoryPage({ params, searchParams }: Props) {
       {formats.length ? (
         <nav
           aria-label={`${category.name} formats`}
-          className="no-scrollbar mt-4 flex gap-2 overflow-x-auto pb-1"
+          className="no-scrollbar relative mt-4 flex gap-2 overflow-x-auto pb-1"
         >
           <span className="shrink-0 rounded-full border border-accent bg-accent px-3 py-1 text-xs font-semibold text-accent-fg">
             All

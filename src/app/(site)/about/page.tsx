@@ -144,7 +144,7 @@ export default async function AboutPage() {
       {writers.length ? (
         <section className="mt-12">
           <h2 className="headline border-b-2 border-accent pb-2 text-2xl uppercase">The team</h2>
-          <ul className="mt-4 grid gap-4 sm:grid-cols-2">
+          <ul className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
             {writers.map((person) => (
               <li key={person.slug}>
                 <Link

@@ -19,7 +19,7 @@ export async function TrendingStrip() {
           Trending
         </span>
         <nav aria-label="Trending topics" className="min-w-0 flex-1">
-          <ul className="no-scrollbar flex items-center gap-4 overflow-x-auto py-2.5">
+          <ul className="no-scrollbar relative flex items-center gap-4 overflow-x-auto py-2.5">
             {posts.map((post) => (
               <li key={post.slug} className="shrink-0">
                 <Link
