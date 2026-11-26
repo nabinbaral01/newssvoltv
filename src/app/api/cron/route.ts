@@ -2,6 +2,7 @@ import { PostStatus } from '@prisma/client';
 import { NextResponse, type NextRequest } from 'next/server';
 import { revalidatePath, revalidateTag } from 'next/cache';
 
+import { notifyIndexNow } from '@/lib/indexnow';
 import { prisma } from '@/lib/prisma';
 import { NAV_TAG, POSTS_TAG } from '@/lib/queries';
 import { purgeExpiredTrash } from '@/app/admin/posts/actions';
@@ -60,6 +61,10 @@ async function publishScheduled() {
     revalidatePath('/');
     revalidatePath('/sitemap.xml', 'page');
     revalidatePath('/rss.xml', 'page');
+
+    // Awaited rather than deferred: this is a cron request with nobody waiting
+    // on it, and notifyIndexNow never throws.
+    await notifyIndexNow(due.map((post) => `/${post.category.slug}/${post.slug}`));
 
     await prisma.auditLog.create({
       data: {

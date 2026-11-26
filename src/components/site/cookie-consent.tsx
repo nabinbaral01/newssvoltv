@@ -37,8 +37,9 @@ export function CookieConsent() {
       <div className="mx-auto flex max-w-5xl flex-col gap-3 sm:flex-row sm:items-center">
         <p className="flex-1 text-sm text-muted">
           We use essential cookies to run the site. With your consent we also measure which
-          articles get read, using our own first-party analytics — IP addresses are hashed, never
-          stored. Ads are served by Google, which uses its own cookies.{' '}
+          articles get read and how the site is used, with our own analytics and Microsoft Clarity
+          — IP addresses are hashed, never stored. Ads are served by Google, which uses its own
+          cookies.{' '}
           <Link href="/privacy" className="text-accent underline underline-offset-2">
             Read the policy
           </Link>

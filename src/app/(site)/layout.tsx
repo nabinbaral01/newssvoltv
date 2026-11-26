@@ -1,4 +1,5 @@
 import { AnalyticsTracker } from '@/components/site/analytics-tracker';
+import { Clarity } from '@/components/site/clarity';
 import { CookieConsent } from '@/components/site/cookie-consent';
 import { SiteFooter } from '@/components/site/footer';
 import { SiteHeader } from '@/components/site/header';
@@ -24,6 +25,7 @@ export default async function SiteLayout({ children }: { children: React.ReactNo
       <CookieConsent />
       <SignupModal signedIn={Boolean(user)} />
       <AnalyticsTracker />
+      <Clarity />
     </div>
   );
 }

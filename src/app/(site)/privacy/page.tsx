@@ -29,7 +29,10 @@ export default function PrivacyPage() {
             which uses its own cookies — see <a href="#advertising">Advertising</a> below.
           </li>
           <li>We never store your IP address. It is hashed with a secret salt on arrival.</li>
-          <li>Analytics cookies are off until you accept them. Essential cookies always run.</li>
+          <li>
+            Analytics cookies — ours and Microsoft Clarity&rsquo;s — are off until you accept them.
+            Essential cookies always run.
+          </li>
           <li>
             Every article keeps a plain view counter that goes up by one per visit. It stores
             nothing about you — no cookie, no address, no row — so it runs without consent.
@@ -77,6 +80,27 @@ export default function PrivacyPage() {
             </tr>
           </tbody>
         </table>
+
+        <h2 id="clarity">Microsoft Clarity</h2>
+        <p>
+          If you accept analytics cookies, we also use Microsoft Clarity to understand how readers
+          use the site — where people click, how far they scroll and where pages are confusing —
+          through heatmaps and anonymised session replays. Clarity does not load at all if you
+          choose &ldquo;Essential only&rdquo;, or if your browser sends Do Not Track or Global
+          Privacy Control. Text you type into forms is masked and never recorded.
+        </p>
+        <p>
+          Clarity sets its own cookies (such as <code>_clck</code> and <code>_clsk</code>) to
+          group page views into a visit. Microsoft processes this data as described in the{' '}
+          <a
+            href="https://privacy.microsoft.com/privacystatement"
+            rel="noopener noreferrer"
+            target="_blank"
+          >
+            Microsoft Privacy Statement
+          </a>
+          . We use it only to improve the site, never to identify you.
+        </p>
 
         <h2 id="advertising">Advertising</h2>
         <p>

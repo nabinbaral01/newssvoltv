@@ -3,8 +3,10 @@
 import { PostStatus, Prisma } from '@prisma/client';
 import { revalidatePath, updateTag } from 'next/cache';
 import { headers } from 'next/headers';
+import { after } from 'next/server';
 
 import { clientIp, hash } from '@/lib/analytics';
+import { notifyIndexNow } from '@/lib/indexnow';
 import { docToText, readingTime, autoExcerpt } from '@/lib/content';
 import { assertCapability, can, currentUser } from '@/lib/permissions';
 import { prisma } from '@/lib/prisma';
@@ -209,6 +211,18 @@ export async function savePostAction(
   revalidatePublic(saved.category.slug, saved.slug);
   revalidatePath('/admin/posts');
 
+  // Tell IndexNow engines about anything a reader could reach or could no
+  // longer reach: a post going live, a live post being edited, or a live post
+  // being pulled. Drafts that were never public are nobody's business.
+  const wasLive = existing?.status === PostStatus.PUBLISHED;
+  if (status === PostStatus.PUBLISHED || wasLive) {
+    const paths = [`/${saved.category.slug}/${saved.slug}`];
+    if (wasLive && existing && (existing.slug !== saved.slug || existing.category.slug !== saved.category.slug)) {
+      paths.push(`/${existing.category.slug}/${existing.slug}`);
+    }
+    after(() => notifyIndexNow(paths));
+  }
+
   return { ok: true, id: saved.id, slug: saved.slug, savedAt: new Date().toISOString() };
 }
 
@@ -336,6 +350,13 @@ export async function bulkPostAction(
 
   let affected = 0;
 
+  // Read before writing: once a post is archived or deleted, which of them
+  // were live is no longer visible from the rows themselves.
+  const touched = await prisma.post.findMany({
+    where: { id: { in: ids } },
+    select: { slug: true, status: true, deletedAt: true, category: { select: { slug: true } } },
+  });
+
   if (action === 'delete') {
     // Soft: the row, its comments and its analytics all survive.
     const result = await prisma.post.updateMany({
@@ -375,6 +396,15 @@ export async function bulkPostAction(
   revalidatePublic();
   revalidatePath('/admin/posts');
 
+  // Publishing makes posts reachable; archiving, drafting or deleting a live
+  // one makes it unreachable. Both are worth telling the IndexNow engines.
+  const changed = touched.filter((post) =>
+    action === 'publish' ? !post.deletedAt : post.status === PostStatus.PUBLISHED,
+  );
+  if (changed.length && action !== 'purge') {
+    after(() => notifyIndexNow(changed.map((post) => `/${post.category.slug}/${post.slug}`)));
+  }
+
   return { ok: true, affected };
 }
 
@@ -384,7 +414,7 @@ export async function deletePostAction(id: string): Promise<{ ok?: boolean; erro
 
   const post = await prisma.post.findUnique({
     where: { id },
-    select: { slug: true, category: { select: { slug: true } } },
+    select: { slug: true, status: true, category: { select: { slug: true } } },
   });
   if (!post) return { error: 'Already gone.' };
 
@@ -399,6 +429,9 @@ export async function deletePostAction(id: string): Promise<{ ok?: boolean; erro
 
   revalidatePublic(post.category.slug, post.slug);
   revalidatePath('/admin/posts');
+  if (post.status === PostStatus.PUBLISHED) {
+    after(() => notifyIndexNow([`/${post.category.slug}/${post.slug}`]));
+  }
   return { ok: true };
 }
 
