@@ -17,14 +17,17 @@ export default function PrivacyPage() {
     <div className="mx-auto max-w-3xl px-4 py-10">
       <h1 className="headline text-4xl uppercase sm:text-5xl">Privacy policy</h1>
       <p className="mt-2 text-sm text-muted">
-        Last updated {new Date().getFullYear()}. This is a demonstration publication, but the data
-        handling described below is exactly what the software does.
+        Last updated {new Date().getFullYear()}. The data handling described below is exactly what
+        this site does.
       </p>
 
       <div className="prose-volt mt-8">
         <h2>The short version</h2>
         <ul>
-          <li>We run our own analytics. No third-party ad trackers, no data brokers.</li>
+          <li>
+            We run our own analytics and never sell your data. Ads on the site are served by Google,
+            which uses its own cookies — see <a href="#advertising">Advertising</a> below.
+          </li>
           <li>We never store your IP address. It is hashed with a secret salt on arrival.</li>
           <li>Analytics cookies are off until you accept them. Essential cookies always run.</li>
           <li>
@@ -74,6 +77,51 @@ export default function PrivacyPage() {
             </tr>
           </tbody>
         </table>
+
+        <h2 id="advertising">Advertising</h2>
+        <p>
+          The Volt V is supported by advertising served through Google AdSense. Google and its
+          partners are third-party vendors that use cookies to serve ads on this site based on
+          your prior visits to this website and other websites.
+        </p>
+        <ul>
+          <li>
+            Google&rsquo;s use of advertising cookies enables it and its partners to serve ads to
+            you based on your visits to this site and/or other sites on the internet.
+          </li>
+          <li>
+            You can opt out of personalised advertising by visiting Google&rsquo;s{' '}
+            <a href="https://adssettings.google.com" rel="noopener noreferrer" target="_blank">
+              Ads Settings
+            </a>
+            . You can also opt out of some third-party vendors&rsquo; use of cookies for
+            personalised advertising at{' '}
+            <a href="https://www.aboutads.info/choices" rel="noopener noreferrer" target="_blank">
+              aboutads.info
+            </a>
+            .
+          </li>
+          <li>
+            How Google uses information from sites that use its services is explained at{' '}
+            <a
+              href="https://policies.google.com/technologies/partner-sites"
+              rel="noopener noreferrer"
+              target="_blank"
+            >
+              policies.google.com/technologies/partner-sites
+            </a>
+            .
+          </li>
+          <li>
+            Visitors in the EEA, UK and Switzerland are asked for consent before personalised ads
+            are shown, as required by law.
+          </li>
+        </ul>
+        <p>
+          These advertising cookies are set by Google, not by us, and are not listed in the table
+          above. We do not share your account details, email address or analytics data with
+          advertisers.
+        </p>
 
         <h2>What we record when you read an article</h2>
         <p>
@@ -140,7 +188,8 @@ export default function PrivacyPage() {
 
         <h2>Contact</h2>
         <p>
-          Questions about any of this go to <code>privacy@voltv.example</code>.
+          Questions about your privacy or your data? Send us a message through our{' '}
+          <Link href="/contact">contact page</Link> and we will reply to the address you give.
         </p>
       </div>
     </div>

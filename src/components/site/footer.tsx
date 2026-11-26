@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { NewsletterForm } from '@/components/site/newsletter-form';
 import { SocialIcon } from '@/components/site/social-icon';
 import { Wordmark } from '@/components/site/wordmark';
+import { getNavigation, publishedSections } from '@/lib/queries';
 import { getSettings } from '@/lib/site';
 
 const SOCIAL_LABELS: Record<string, string> = {
@@ -27,8 +28,19 @@ function isSupported(key: string): boolean {
 }
 
 export async function SiteFooter() {
-  const settings = await getSettings();
-  const columns = settings['footer.columns'] ?? [];
+  const [settings, nav] = await Promise.all([getSettings(), getNavigation()]);
+
+  // Footer columns are edited by hand in Settings, so a link to a section with
+  // no stories yet is dropped here rather than relying on someone to remove
+  // it — and it comes back by itself once that section has a story.
+  const live = new Set(publishedSections(nav).map((c) => `/${c.slug}`));
+  const empty = new Set(nav.map((c) => `/${c.slug}`).filter((href) => !live.has(href)));
+  const columns = (settings['footer.columns'] ?? [])
+    .map((column) => ({
+      ...column,
+      links: column.links.filter((link) => !empty.has(link.href.replace(/\/$/, ''))),
+    }))
+    .filter((column) => column.links.length > 0);
   const social = Object.entries(settings['social.links'] ?? {}).filter(([key]) =>
     isSupported(key),
   );
@@ -96,6 +108,25 @@ export async function SiteFooter() {
         </div>
 
         <div className="mt-12 border-t border-border pt-6 text-center text-xs text-muted">
+          {/* Fixed, not part of the editable columns: who runs the site and how
+              to reach them must be one click from every page. */}
+          <nav aria-label="Site information" className="mb-3">
+            <ul className="flex flex-wrap justify-center gap-x-5 gap-y-2">
+              {[
+                { href: '/about', label: 'About us' },
+                { href: '/contact', label: 'Contact' },
+                { href: '/authors', label: 'Our writers' },
+                { href: '/privacy', label: 'Privacy policy' },
+                { href: '/terms', label: 'Terms of use' },
+              ].map((link) => (
+                <li key={link.href}>
+                  <Link href={link.href} className="transition-colors hover:text-accent">
+                    {link.label}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </nav>
           <p>
             © {new Date().getFullYear()} {settings['site.name']}. All rights reserved.
           </p>

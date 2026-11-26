@@ -141,6 +141,20 @@ export const getNavigation = cachedQuery(
   { tags: [NAV_TAG, POSTS_TAG], revalidate: 900 },
 );
 
+/**
+ * Sections readers should be offered: only those with at least one published
+ * story. A menu item that opens onto "No stories here yet" makes the whole
+ * site look unfinished — to readers and to ad-network reviewers alike. A
+ * section reappears by itself the moment its first story is published.
+ *
+ * On a brand-new site with nothing published, every section is kept so the
+ * menu is not empty.
+ */
+export function publishedSections(nav: NavCategory[]): NavCategory[] {
+  const live = nav.filter((category) => category.formats.length > 0);
+  return live.length ? live : nav;
+}
+
 // ---------------------------------------------------------------- homepage
 
 export const getTrending = cachedQuery(

@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import Link from 'next/link';
 
 export const metadata: Metadata = {
   title: 'Terms of use',
@@ -13,9 +14,22 @@ export default function TermsPage() {
 
       <div className="prose-volt mt-8">
         <p>
-          Volt V is a demonstration publication. Every film, series, game, studio and person
-          covered on this site is fictional, and nothing published here is reporting about any
-          real work or real person.
+          These terms apply to everyone who reads, comments on or creates an account with The
+          Volt V. By using the site you agree to them.
+        </p>
+
+        <h2>Our content</h2>
+        <p>
+          The Volt V publishes entertainment news, analysis, fan theories and reviews. News is
+          reported in good faith from the sources we cite. Rumours and leaks are labelled as
+          unconfirmed, and theories and reviews are the opinion of the named writer. We correct
+          errors when we find them — you can report one through our{' '}
+          <Link href="/contact">contact page</Link>.
+        </p>
+        <p>
+          The Volt V is independent and is not affiliated with or endorsed by any studio,
+          publisher or network we cover. Trademarks, characters and images belong to their
+          respective owners and are used for news, commentary and review.
         </p>
 
         <h2>Your account</h2>
@@ -31,10 +45,10 @@ export default function TermsPage() {
           private information. Moderation decisions are ours to make.
         </p>
 
-        <h2>Content</h2>
+        <h2>Copying our work</h2>
         <p>
-          Articles, images and design on this site belong to Volt V. Quoting a short extract with
-          a link back is fine; republishing whole articles is not.
+          Our original articles and design belong to The Volt V. Quoting a short extract with a
+          link back is fine; republishing whole articles is not.
         </p>
 
         <h2>No warranty</h2>
