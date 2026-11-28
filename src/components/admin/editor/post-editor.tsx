@@ -1,7 +1,7 @@
 'use client';
 
 import {
-  ChevronDown, Eye, History, Loader2, Save, Star, Trash2, Upload, X,
+  ChevronDown, Eye, History, ImagePlus, Loader2, Save, Star, Trash2, Upload, X,
 } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -22,6 +22,49 @@ import { slugify } from '@/lib/slug';
 import { cn, formatDateTime, relativeTime } from '@/lib/utils';
 
 const AUTOSAVE_MS = 15_000;
+
+/** Covers are shown at most 1600px wide (16:9, 1600x900 is the house size). */
+const COVER_MAX_WIDTH = 1600;
+/** Already small and the right width? Upload it untouched. */
+const COVER_KEEP_BYTES = 400 * 1024;
+
+/**
+ * Shrinks a cover in the browser before it is uploaded. A pasted image arrives
+ * as an uncompressed PNG, often several megabytes, which would slow every page
+ * the cover appears on. Anything wider than 1600px or heavier than 400 KB is
+ * redrawn at no more than 1600px wide and saved as WebP. If the browser cannot
+ * decode or re-encode it, the original is uploaded unchanged.
+ */
+async function optimiseCover(file: File): Promise<File> {
+  try {
+    const bitmap = await createImageBitmap(file);
+    const scale = Math.min(1, COVER_MAX_WIDTH / bitmap.width);
+    if (scale === 1 && file.size <= COVER_KEEP_BYTES) {
+      bitmap.close();
+      return file;
+    }
+    const width = Math.round(bitmap.width * scale);
+    const height = Math.round(bitmap.height * scale);
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return file;
+    ctx.drawImage(bitmap, 0, 0, width, height);
+    bitmap.close();
+    const blob = await new Promise<Blob | null>((resolve) =>
+      canvas.toBlob(resolve, 'image/webp', 0.85),
+    );
+    // Some browsers fall back to PNG when WebP encoding is unsupported; keep
+    // whichever is smaller so optimising never makes a file bigger.
+    if (!blob || blob.size >= file.size) return file;
+    const base = (file.name || 'cover').replace(/\.[^.]+$/, '') || 'cover';
+    const ext = blob.type === 'image/webp' ? 'webp' : 'png';
+    return new File([blob], `${base === 'image' ? 'cover' : base}.${ext}`, { type: blob.type });
+  } catch {
+    return file;
+  }
+}
 
 export type EditorPost = {
   id: string | null;
@@ -227,17 +270,49 @@ export function PostEditor({
     newTags,
   };
 
-  async function uploadCover(file: File) {
-    const body = new FormData();
-    body.append('file', file);
-    const res = await fetch('/api/admin/media', { method: 'POST', body });
-    if (!res.ok) {
-      toast.error('Cover upload failed.');
+  const [coverBusy, setCoverBusy] = React.useState(false);
+  const [coverDragging, setCoverDragging] = React.useState(false);
+  const coverInputRef = React.useRef<HTMLInputElement>(null);
+
+  async function uploadCover(original: File) {
+    if (!original.type.startsWith('image/')) {
+      toast.error('That is not an image.');
       return;
     }
-    const data = await res.json();
-    set('coverImage', data.asset.url);
-    if (!draft.ogImage) set('ogImage', data.asset.url);
+    setCoverBusy(true);
+    try {
+      const file = await optimiseCover(original);
+      const body = new FormData();
+      body.append('file', file);
+      const res = await fetch('/api/admin/media', { method: 'POST', body });
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        toast.error(data?.error ?? 'Cover upload failed.');
+        return;
+      }
+      const data = await res.json();
+      set('coverImage', data.asset.url);
+      if (!draft.ogImage) set('ogImage', data.asset.url);
+      toast.success('Cover added.');
+    } finally {
+      setCoverBusy(false);
+    }
+  }
+
+  /** Paste from the clipboard: "Copy image" on any web page, or a screenshot. */
+  function onCoverPaste(event: React.ClipboardEvent) {
+    const file = Array.from(event.clipboardData.files).find((f) => f.type.startsWith('image/'));
+    if (file) {
+      event.preventDefault();
+      void uploadCover(file);
+      return;
+    }
+    // "Copy image address" puts a URL on the clipboard, not the picture itself.
+    const text = event.clipboardData.getData('text/plain');
+    if (/^https?:\/\//i.test(text.trim())) {
+      event.preventDefault();
+      toast.error('That is the image address. Right-click the picture and choose "Copy image" instead.');
+    }
   }
 
   return (
@@ -500,32 +575,94 @@ export function PostEditor({
           </Panel>
 
           <Panel title="Cover image">
-            {draft.coverImage ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={draft.coverImage}
-                alt=""
-                className="aspect-video w-full rounded border border-border object-cover"
-              />
-            ) : (
-              <div className="grid aspect-video place-items-center rounded border border-dashed border-border text-xs text-muted">
-                No cover yet
-              </div>
-            )}
+            {/* One target for every way an image arrives: click to browse,
+                drop a file, or paste (Ctrl+V) an image copied from a web page.
+                It is focusable so a paste reaches it after a click. */}
+            <div
+              role="button"
+              tabIndex={0}
+              aria-label="Cover image: click to choose, drop a file, or paste an image"
+              aria-busy={coverBusy}
+              onClick={() => !coverBusy && coverInputRef.current?.click()}
+              onKeyDown={(e) => {
+                if ((e.key === 'Enter' || e.key === ' ') && !coverBusy) {
+                  e.preventDefault();
+                  coverInputRef.current?.click();
+                }
+              }}
+              onPaste={onCoverPaste}
+              onDragOver={(e) => {
+                e.preventDefault();
+                setCoverDragging(true);
+              }}
+              onDragLeave={() => setCoverDragging(false)}
+              onDrop={(e) => {
+                e.preventDefault();
+                setCoverDragging(false);
+                const file = Array.from(e.dataTransfer.files).find((f) => f.type.startsWith('image/'));
+                if (file) void uploadCover(file);
+              }}
+              className={cn(
+                'group relative grid aspect-video w-full cursor-pointer place-items-center overflow-hidden rounded border text-xs text-muted outline-none transition-colors focus-visible:border-accent focus-visible:ring-2 focus-visible:ring-accent/40',
+                coverDragging ? 'border-accent bg-accent/10' : draft.coverImage ? 'border-border' : 'border-dashed border-border hover:border-accent',
+              )}
+            >
+              {draft.coverImage ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={draft.coverImage} alt="" className="absolute inset-0 size-full object-cover" />
+              ) : null}
 
-            <label className="flex cursor-pointer items-center justify-center gap-1.5 rounded border border-border py-1.5 text-xs hover:border-accent hover:text-accent">
+              <div
+                className={cn(
+                  'relative z-10 flex flex-col items-center gap-1 px-3 text-center',
+                  draft.coverImage &&
+                    !coverBusy &&
+                    !coverDragging &&
+                    'rounded bg-black/70 px-3 py-2 text-white opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100',
+                  draft.coverImage && (coverBusy || coverDragging) && 'rounded bg-black/70 px-3 py-2 text-white',
+                )}
+              >
+                {coverBusy ? (
+                  <>
+                    <Loader2 className="size-5 animate-spin" aria-hidden />
+                    <span>Uploading…</span>
+                  </>
+                ) : coverDragging ? (
+                  <span className="font-semibold text-accent">Drop to use as cover</span>
+                ) : (
+                  <>
+                    <ImagePlus className="size-5" aria-hidden />
+                    <span className="font-medium">
+                      {draft.coverImage ? 'Replace cover' : 'Click, drop or paste an image'}
+                    </span>
+                    <span className="text-[11px] opacity-80">
+                      Copy an image, click here, press Ctrl + V
+                    </span>
+                  </>
+                )}
+              </div>
+            </div>
+
+            <input
+              ref={coverInputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              hidden
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                e.target.value = '';
+                if (file) void uploadCover(file);
+              }}
+            />
+
+            <button
+              type="button"
+              disabled={coverBusy}
+              onClick={() => coverInputRef.current?.click()}
+              className="flex w-full items-center justify-center gap-1.5 rounded border border-border py-1.5 text-xs hover:border-accent hover:text-accent disabled:opacity-50"
+            >
               <Upload className="size-3.5" aria-hidden /> Upload cover
-              <input
-                type="file"
-                accept="image/*"
-                hidden
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  e.target.value = '';
-                  if (file) void uploadCover(file);
-                }}
-              />
-            </label>
+            </button>
 
             <Field
               label="Alt text"

@@ -52,7 +52,7 @@ function safeName(original: string): string {
 }
 
 /**
- * Intrinsic dimensions, read from the file header. Only PNG, JPEG, GIF and SVG
+ * Intrinsic dimensions, read from the file header. Only PNG, JPEG, GIF, WebP and SVG
  * are probed; anything else stores null and next/image falls back to layout
  * sizing rather than guessing.
  */
@@ -80,6 +80,31 @@ function probeDimensions(buffer: Buffer, mimeType: string): { width: number | nu
           return { height: buffer.readUInt16BE(offset + 5), width: buffer.readUInt16BE(offset + 7) };
         }
         offset += 2 + length;
+      }
+    }
+
+    // RIFF container: "RIFF" <size> "WEBP" then the first chunk, whose layout
+    // depends on the encoding. Covers pasted in the editor are converted to
+    // WebP in the browser, so this is the common case for new uploads.
+    if (
+      mimeType === 'image/webp' &&
+      buffer.length > 30 &&
+      buffer.toString('ascii', 0, 4) === 'RIFF' &&
+      buffer.toString('ascii', 8, 12) === 'WEBP'
+    ) {
+      const chunk = buffer.toString('ascii', 12, 16);
+      if (chunk === 'VP8 ') {
+        // Lossy: 14-bit width/height after the 3-byte frame tag and start code.
+        return { width: buffer.readUInt16LE(26) & 0x3fff, height: buffer.readUInt16LE(28) & 0x3fff };
+      }
+      if (chunk === 'VP8L') {
+        // Lossless: 14-bit width-1 and height-1 packed after the 0x2f signature.
+        const bits = buffer.readUInt32LE(21);
+        return { width: (bits & 0x3fff) + 1, height: ((bits >> 14) & 0x3fff) + 1 };
+      }
+      if (chunk === 'VP8X') {
+        // Extended: 24-bit canvas width-1 and height-1.
+        return { width: buffer.readUIntLE(24, 3) + 1, height: buffer.readUIntLE(27, 3) + 1 };
       }
     }
 
