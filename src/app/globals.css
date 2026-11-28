@@ -193,6 +193,21 @@ h4 {
 .prose-volt > * + * {
   margin-top: 1.15em;
 }
+/* Justified body copy, like a printed column: both edges straight. Only from
+   tablet width up: a phone line holds five or six words, and justifying that
+   opens gaps between words that are harder to read than a ragged edge.
+   Hyphenation (from <html lang="en-GB">) keeps the wider lines even too. */
+@media (min-width: 640px) {
+  .prose-volt > p,
+  .prose-volt li > p,
+  .prose-volt li {
+    text-align: justify;
+    text-justify: inter-word;
+    hyphens: auto;
+    -webkit-hyphens: auto;
+    hyphenate-limit-chars: 7 3 3;
+  }
+}
 .prose-volt h2 {
   font-size: clamp(1.6rem, 3.2vw, 2.1rem);
   margin-top: 2em;
