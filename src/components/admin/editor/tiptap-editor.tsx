@@ -3,12 +3,14 @@
 import Image from '@tiptap/extension-image';
 import Link from '@tiptap/extension-link';
 import Placeholder from '@tiptap/extension-placeholder';
+import { TableKit } from '@tiptap/extension-table';
 import Youtube from '@tiptap/extension-youtube';
-import { EditorContent, useEditor, type Editor } from '@tiptap/react';
+import { EditorContent, useEditor, useEditorState, type Editor } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import {
-  Bold, Code, Heading2, Heading3, ImagePlus, Italic, Link2, List, ListOrdered, Loader2,
-  Newspaper, Quote, Redo2, Strikethrough, Undo2, Video,
+  BetweenHorizontalEnd, BetweenVerticalEnd, Bold, Code, Columns3, Heading2, Heading3, ImagePlus,
+  Italic, Link2, List, ListOrdered, Loader2, Newspaper, PanelTop, Quote, Redo2, Rows3,
+  Strikethrough, Table, Trash2, Undo2, Video,
 } from 'lucide-react';
 import * as React from 'react';
 import { toast } from 'sonner';
@@ -34,6 +36,16 @@ const BUTTONS: ToolbarButton[] = [
   { key: 'ordered', label: 'Numbered list', icon: ListOrdered, run: (e) => e.chain().focus().toggleOrderedList().run(), isActive: (e) => e.isActive('orderedList') },
   { key: 'quote', label: 'Pull quote', icon: Quote, run: (e) => e.chain().focus().toggleBlockquote().run(), isActive: (e) => e.isActive('blockquote') },
   { key: 'code', label: 'Code block', icon: Code, run: (e) => e.chain().focus().toggleCodeBlock().run(), isActive: (e) => e.isActive('codeBlock') },
+];
+
+/** Shown only while the cursor is inside a table. */
+const TABLE_TOOLS: { label: string; icon: React.ElementType; run: (editor: Editor) => void; danger?: boolean }[] = [
+  { label: 'Add row below', icon: BetweenHorizontalEnd, run: (e) => e.chain().focus().addRowAfter().run() },
+  { label: 'Add column right', icon: BetweenVerticalEnd, run: (e) => e.chain().focus().addColumnAfter().run() },
+  { label: 'Toggle header row', icon: PanelTop, run: (e) => e.chain().focus().toggleHeaderRow().run() },
+  { label: 'Delete row', icon: Rows3, run: (e) => e.chain().focus().deleteRow().run(), danger: true },
+  { label: 'Delete column', icon: Columns3, run: (e) => e.chain().focus().deleteColumn().run(), danger: true },
+  { label: 'Delete table', icon: Trash2, run: (e) => e.chain().focus().deleteTable().run(), danger: true },
 ];
 
 async function uploadImage(file: File): Promise<{ url: string } | null> {
@@ -69,6 +81,10 @@ export function TipTapEditor({
       Image.configure({ inline: false, allowBase64: false }),
       Youtube.configure({ nocookie: true, width: 720, height: 405 }),
       Placeholder.configure({ placeholder }),
+      // Tables typed in or pasted from Google Docs, Word, Excel or a web page.
+      // Column resizing stays off: widths are set by the article stylesheet so
+      // a table reads the same on a phone as in the editor.
+      TableKit.configure({ table: { resizable: false } }),
       RelatedPost,
     ],
     content: (value as object) ?? undefined,
@@ -98,6 +114,12 @@ export function TipTapEditor({
         return true;
       },
       handlePaste(view, event) {
+        // Word and Excel put a picture of a copied table on the clipboard next
+        // to the table itself. When there is a real table, paste the table and
+        // let the editor convert it, rather than uploading the picture.
+        const html = event.clipboardData?.getData('text/html') ?? '';
+        if (/<table[\s>]/i.test(html)) return false;
+
         const files = Array.from(event.clipboardData?.files ?? []).filter((f) =>
           f.type.startsWith('image/'),
         );
@@ -115,6 +137,13 @@ export function TipTapEditor({
       },
     },
     onUpdate: ({ editor: instance }) => onChange(instance.getJSON()),
+  });
+
+  // The toolbar re-renders on cursor moves only for state it subscribes to;
+  // this is what makes the row/column buttons appear inside a table.
+  const inTable = useEditorState({
+    editor,
+    selector: ({ editor: instance }) => instance?.isActive('table') ?? false,
   });
 
   const editorRef = React.useRef<Editor | null>(null);
@@ -214,6 +243,21 @@ export function TipTapEditor({
 
         <button
           type="button"
+          title="Insert table"
+          aria-label="Insert table"
+          onClick={() =>
+            editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()
+          }
+          className={cn(
+            'grid size-8 place-items-center rounded transition-colors',
+            inTable ? 'bg-elevated text-accent' : 'text-muted hover:bg-elevated hover:text-fg',
+          )}
+        >
+          <Table className="size-4" aria-hidden />
+        </button>
+
+        <button
+          type="button"
           title="Insert related article card"
           aria-label="Insert related article card"
           onClick={insertRelated}
@@ -221,6 +265,32 @@ export function TipTapEditor({
         >
           <Newspaper className="size-4" aria-hidden />
         </button>
+
+        {inTable ? (
+          <>
+            <span className="mx-1 h-5 w-px bg-border" aria-hidden />
+            {TABLE_TOOLS.map((tool) => {
+              const Icon = tool.icon;
+              return (
+                <button
+                  key={tool.label}
+                  type="button"
+                  title={tool.label}
+                  aria-label={tool.label}
+                  onClick={() => tool.run(editor)}
+                  className={cn(
+                    'grid size-8 place-items-center rounded transition-colors',
+                    tool.danger
+                      ? 'text-muted hover:bg-danger/10 hover:text-danger'
+                      : 'text-muted hover:bg-elevated hover:text-fg',
+                  )}
+                >
+                  <Icon className="size-4" aria-hidden />
+                </button>
+              );
+            })}
+          </>
+        ) : null}
 
         <span className="mx-1 h-5 w-px bg-border" aria-hidden />
 

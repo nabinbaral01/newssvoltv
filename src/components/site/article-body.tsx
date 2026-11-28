@@ -87,6 +87,48 @@ function RenderNode({ node, index }: { node: TipTapNode; index: number }) {
     case 'horizontalRule':
       return <hr className="border-border" />;
 
+    case 'table': {
+      const rows = node.content ?? [];
+      // Leading rows made only of header cells become <thead>, so crawlers and
+      // screen readers know which row labels the columns.
+      const headCount = rows.findIndex(
+        (row) => !(row.content ?? []).every((cell) => cell.type === 'tableHeader'),
+      );
+      const split = headCount === -1 ? rows.length : headCount;
+      const head = rows.slice(0, split);
+      const body = rows.slice(split);
+      return (
+        // Wide tables scroll inside this box on a phone instead of widening
+        // the page. `relative` keeps anything positioned inside it clipped,
+        // and tabIndex lets keyboard users scroll it.
+        <div className="table-scroll relative" role="region" aria-label="Table" tabIndex={0}>
+          <table>
+            {head.length ? <thead>{renderNodes(head)}</thead> : null}
+            {body.length ? <tbody>{renderNodes(body)}</tbody> : null}
+          </table>
+        </div>
+      );
+    }
+
+    case 'tableRow':
+      return <tr>{renderNodes(node.content)}</tr>;
+
+    case 'tableHeader':
+    case 'tableCell': {
+      const Tag = node.type === 'tableHeader' ? 'th' : 'td';
+      const colSpan = Number(node.attrs?.colspan ?? 1);
+      const rowSpan = Number(node.attrs?.rowspan ?? 1);
+      return (
+        <Tag
+          {...(colSpan > 1 ? { colSpan } : {})}
+          {...(rowSpan > 1 ? { rowSpan } : {})}
+          {...(Tag === 'th' ? { scope: 'col' } : {})}
+        >
+          {renderNodes(node.content)}
+        </Tag>
+      );
+    }
+
     case 'hardBreak':
       return <br />;
 

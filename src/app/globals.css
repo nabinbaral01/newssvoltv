@@ -254,6 +254,63 @@ h4 {
   padding: 0;
 }
 
+/* Tables. The article wraps each in .table-scroll so a wide table scrolls
+   sideways inside its own box on a phone instead of widening the page; the
+   editor (TipTap's .tableWrapper) gets the same treatment. */
+.prose-volt .table-scroll,
+.prose-volt .tableWrapper {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+}
+.prose-volt table {
+  width: 100%;
+  min-width: 28rem;
+  border-collapse: collapse;
+  font-size: 0.9375rem;
+  line-height: 1.5;
+}
+.prose-volt th,
+.prose-volt td {
+  border-bottom: 1px solid var(--border);
+  padding: 0.6rem 0.85rem;
+  text-align: left;
+  vertical-align: top;
+}
+.prose-volt th + th,
+.prose-volt td + td,
+.prose-volt th + td,
+.prose-volt td + th {
+  border-left: 1px solid var(--border);
+}
+.prose-volt tr:last-child > td {
+  border-bottom: none;
+}
+.prose-volt th {
+  background: var(--elevated);
+  font-weight: 600;
+  color: var(--fg);
+  font-size: 0.8125rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.prose-volt tbody tr:nth-child(even) > td {
+  background: color-mix(in srgb, var(--elevated) 45%, transparent);
+}
+/* Cells hold paragraphs; the article's paragraph spacing does not belong here. */
+.prose-volt th > p,
+.prose-volt td > p {
+  margin: 0;
+}
+.prose-volt th > p + p,
+.prose-volt td > p + p {
+  margin-top: 0.4em;
+}
+/* Editor only: show which cells are selected for a row/column action. */
+.prose-volt .selectedCell {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
 /* Horizontal rails: scrollable on mobile without a visible scrollbar. */
 .no-scrollbar {
   scrollbar-width: none;
